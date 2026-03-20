@@ -1,0 +1,135 @@
+syntax = "proto2";
+package KuaiShouPack;
+option go_package = "ks-prank/proto";
+
+enum PayloadType {
+    CYCLEBG = 0;
+    CS_HEARTBEAT = 1;
+    SC_HEARTBEAT_ACK = 101;
+    CS_ENTER_ROOM = 200;
+    SC_ENTER_ROOM_ACK = 300;
+    SC_FEED_PUSH = 310;
+    SC_LIVE_WATCHING_LIST = 340;
+    SC_RED_PACK_FEED = 330;
+}
+
+message SocketMessage {
+    optional PayloadType payloadType = 1;
+    optional CompressionType compressionType = 2;
+    optional bytes payload = 3;
+    enum CompressionType {
+        UNKNOWN = 0;
+        NONE = 1;
+        GZIP = 2;
+        AES = 3;
+    }
+}
+
+message CSWebEnterRoom {
+    optional string token = 1;
+    optional string liveStreamId = 2;
+    optional uint32 reconnectCount = 3;
+    optional uint32 lastErrorCode = 4;
+    optional string expTag = 5;
+    optional string attach = 6;
+    optional string pageId = 7;
+}
+
+message CSWebHeartbeat {
+    optional uint64 timestamp = 1;
+}
+
+message SCWebEnterRoomAck {
+    optional uint32 code = 1;
+    optional string msg = 2;
+}
+
+message SCWebFeedPush {
+    optional string displayWatchingCount = 1;
+    optional string displayLikeCount = 2;
+    optional uint64 pendingLikeCount = 3;
+    optional uint64 pushInterval = 4;
+    repeated WebCommentFeed commentFeeds = 5;
+    optional string commentCursor = 6;
+    repeated WebComboCommentFeed comboCommentFeed = 7;
+    repeated WebLikeFeed likeFeeds = 8;
+    repeated WebGiftFeed giftFeeds = 9;
+    optional string giftCursor = 10;
+    repeated WebSystemNoticeFeed systemNoticeFeeds = 11;
+    repeated WebShareFeed shareFeeds = 12;
+}
+
+message WebGiftFeed {
+    optional string id = 1;
+    optional SimpleUserInfo user = 2;
+    optional uint64 time = 3;
+    optional uint32 giftId = 4;
+    optional uint64 sortRank = 5;
+    optional string mergeKey = 6;
+    optional uint32 batchSize = 7;
+    optional uint32 comboCount = 8;
+    optional uint32 rank = 9;
+    optional uint64 expireDuration = 10;
+    optional uint64 clientTimestamp = 11;
+    optional uint64 slotDisplayDuration = 12;
+    optional uint32 starLevel = 13;
+    optional StyleType styleType = 14;
+    optional WebLiveAssistantType liveAssistantType = 15;
+    optional string deviceHash = 16;
+    optional bool danmakuDisplay = 17;
+    enum StyleType {
+        UNKNOWN_STYLE = 0;
+        BATCH_STAR_0 = 1;
+        BATCH_STAR_1 = 2;
+        BATCH_STAR_2 = 3;
+        BATCH_STAR_3 = 4;
+        BATCH_STAR_4 = 5;
+        BATCH_STAR_5 = 6;
+        BATCH_STAR_6 = 7;
+    }
+}
+
+message WebCommentFeed {
+    optional string id = 1;
+    optional SimpleUserInfo user = 2;
+    optional string content = 3;
+    optional string deviceHash = 4;
+    optional uint64 sortRank = 5;
+    optional string color = 6;
+    optional uint32 showType = 7;
+}
+
+message WebComboCommentFeed {
+    optional string id = 1;
+    optional string content = 2;
+    optional uint32 comboCount = 3;
+}
+
+message WebLikeFeed {
+    optional string id = 1;
+    optional SimpleUserInfo user = 2;
+    optional uint64 sortRank = 3;
+}
+
+message WebSystemNoticeFeed {
+    optional string id = 1;
+    optional string content = 2;
+    optional SimpleUserInfo user = 3;
+}
+
+message WebShareFeed {
+    optional string id = 1;
+    optional SimpleUserInfo user = 2;
+    optional uint64 sortRank = 3;
+}
+
+message SimpleUserInfo {
+    optional string principalId = 1;
+    optional string userName = 2;
+    optional string headUrl = 3;
+}
+
+enum WebLiveAssistantType {
+    UNKNOWN_ASSISTANT = 0;
+    NORMAL = 1;
+}
