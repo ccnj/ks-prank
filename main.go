@@ -15,9 +15,18 @@ import (
 
 	pb "ks-prank/proto"
 
+	"ks-prank/config"
+	"ks-prank/internal/handler"
+	"ks-prank/internal/initialize"
+	"ks-prank/internal/worker"
+
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
+
+// ============================================================
+// 礼物映射
+// ============================================================
 
 type giftInfo struct {
 	Name  string
@@ -208,6 +217,96 @@ func getGiftPrice(id uint32) int {
 	return 0
 }
 
+// ============================================================
+// 全局 dispatcher + 弹幕随机
+// ============================================================
+
+var dispatcher *worker.GiftDispatcher
+
+// chatActionEntry 弹幕随机动作
+type chatActionEntry struct {
+	virtualGiftName string
+	weight          int
+}
+
+var (
+	chatTrigger     string
+	chatEntries     []chatActionEntry
+	chatTotalWeight int
+)
+
+func buildDispatcher() *worker.GiftDispatcher {
+	cfg := config.ConfIns
+
+	// 从 registry 构建 actions + giftGroups
+	actions := make(map[string]worker.GiftAction)
+	groupMap := make(map[int][]string) // workerGroup → []giftName
+
+	for _, ga := range cfg.GiftActions {
+		factory, ok := handler.ActionRegistry[ga.Action]
+		if !ok {
+			log.Fatalf("未知 action: %s (礼物: %s)", ga.Action, ga.GiftName)
+		}
+		actions[ga.GiftName] = factory(ga)
+		groupMap[ga.WorkerGroup] = append(groupMap[ga.WorkerGroup], ga.GiftName)
+	}
+
+	// 弹幕随机玩法
+	if cfg.ChatAction != nil && cfg.ChatAction.Enabled {
+		chatTrigger = cfg.ChatAction.Trigger
+		for i, entry := range cfg.ChatAction.Actions {
+			virtualName := fmt.Sprintf("_chat_%d", i)
+			fakeCfg := config.GiftActionConfig{
+				GiftName: virtualName,
+				Action:   entry.Action,
+				Params:   entry.Params,
+			}
+			factory, ok := handler.ActionRegistry[entry.Action]
+			if !ok {
+				log.Fatalf("弹幕随机: 未知 action: %s", entry.Action)
+			}
+			actions[virtualName] = factory(fakeCfg)
+			groupMap[entry.WorkerGroup] = append(groupMap[entry.WorkerGroup], virtualName)
+
+			chatEntries = append(chatEntries, chatActionEntry{
+				virtualGiftName: virtualName,
+				weight:          entry.Weight,
+			})
+			chatTotalWeight += entry.Weight
+		}
+	}
+
+	// groupMap → sorted giftGroups slice
+	maxGroup := 0
+	for g := range groupMap {
+		if g > maxGroup {
+			maxGroup = g
+		}
+	}
+	giftGroups := make([][]string, maxGroup+1)
+	for g, names := range groupMap {
+		giftGroups[g] = names
+	}
+
+	return worker.NewGiftDispatcher(actions, giftGroups, 100)
+}
+
+func pickRandomChatAction() string {
+	r := rand.Intn(chatTotalWeight)
+	cumulative := 0
+	for _, e := range chatEntries {
+		cumulative += e.weight
+		if r < cumulative {
+			return e.virtualGiftName
+		}
+	}
+	return chatEntries[len(chatEntries)-1].virtualGiftName
+}
+
+// ============================================================
+// 快手 WebSocket 协议
+// ============================================================
+
 func generatePageID() string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 16)
@@ -303,49 +402,89 @@ func handleSocketMessage(data []byte) {
 }
 
 func handleFeedPush(feed *pb.SCWebFeedPush) {
-	// 处理礼物
+	// 处理礼物 → 分发到 dispatcher
 	for _, gift := range feed.GiftFeeds {
 		user := gift.User
 		userName := "未知用户"
+		userAvatar := ""
 		if user != nil {
 			userName = user.GetUserName()
+			userAvatar = user.GetHeadUrl()
 		}
+
 		giftID := gift.GetGiftId()
 		giftName := getGiftName(giftID)
-		price := getGiftPrice(giftID)
-		log.Printf("[礼物] %s 送出 %s (%d快币) x%d (giftId=%d, comboCount=%d)",
-			userName, giftName, price, gift.GetBatchSize(), giftID, gift.GetComboCount())
+		count := int(gift.GetBatchSize())
+		if count <= 0 {
+			count = 1
+		}
+
+		log.Printf("[礼物] %s 送出 %s (%d快币) x%d", userName, giftName, getGiftPrice(giftID), count)
+
+		dispatcher.Dispatch(worker.GiftTask{
+			GiftName:   giftName,
+			Count:      count,
+			KsNickname: userName,
+			KsAvatar:   userAvatar,
+		})
 	}
 
-	// 处理弹幕
+	// 处理弹幕 → 匹配 trigger → 按权重随机分发
 	for _, comment := range feed.CommentFeeds {
 		user := comment.User
 		userName := "未知用户"
+		userAvatar := ""
 		if user != nil {
 			userName = user.GetUserName()
+			userAvatar = user.GetHeadUrl()
 		}
-		log.Printf("[弹幕] %s: %s", userName, comment.GetContent())
-	}
 
-	// 处理点赞（量大，只在有礼物/弹幕时顺带打印）
-	if len(feed.LikeFeeds) > 0 && (len(feed.GiftFeeds) > 0 || len(feed.CommentFeeds) > 0) {
-		log.Printf("[点赞] 本次推送包含 %d 条点赞", len(feed.LikeFeeds))
+		content := comment.GetContent()
+		log.Printf("[弹幕] %s: %s", userName, content)
+
+		if chatTrigger != "" && content == chatTrigger {
+			virtualName := pickRandomChatAction()
+			log.Printf("[弹幕触发] %s 发送 %s → %s", userName, content, virtualName)
+			dispatcher.Dispatch(worker.GiftTask{
+				GiftName:   virtualName,
+				Count:      1,
+				KsNickname: userName,
+				KsAvatar:   userAvatar,
+			})
+		}
 	}
 }
+
+// ============================================================
+// main
+// ============================================================
 
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	// Demo 模式：直接硬编码连接信息，验证协议是否能跑通
-	wssURL := "wss://livejs-ws-group5.gifshow.com/websocket"
-	token := "Hxfj8WpSi0ay9wmnSTtJBWBO5DOHLZ0twR4dKYbxd+GFFnM3r1fFubfAsRk1fJM2sqRfrQuRM0C86rzGUfWW7G2xWifTHM40qPSwlzPZMJMGtZYdFHSIbYuKptIIBFulAi/hdlQH0siF2/VBQ0VznnvCHIozIsBly2ZBMB93Y6RgViHe/XdyhYLrO8VG9JMeVL4bE5p2Y5BqY62whzKU3mlmj7tGA9xWVX7yCC7u1eY="
-	liveStreamID := "nWRydQ_je14"
+	// 初始化基础设施
+	initialize.InitHttpClient()
+	initialize.InitMqtt()
 
-	// 允许通过命令行覆盖
+	// 构建并启动 dispatcher
+	dispatcher = buildDispatcher()
+	dispatcher.Start()
+	defer dispatcher.Stop()
+
+	// 快手连接参数：优先 config，命令行可覆盖
+	cfg := config.ConfIns
+	wssURL := cfg.WssUrl
+	token := cfg.Token
+	liveStreamID := cfg.LiveStreamId
+
 	if len(os.Args) >= 4 {
 		wssURL = os.Args[1]
 		token = os.Args[2]
 		liveStreamID = os.Args[3]
+	}
+
+	if token == "" || liveStreamID == "" {
+		log.Fatal("token 和 live_stream_id 不能为空，请在 config.yaml 中配置或通过命令行传入")
 	}
 
 	log.Printf("liveStreamId: %s", liveStreamID)

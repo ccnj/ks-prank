@@ -1,0 +1,72 @@
+# 服务端配置
+server_url: "https://mwapi.ybkc.cc"
+mqtt_broker: "tcp://14.103.147.62:1883"
+mqtt_username: ""
+mqtt_password: ""
+
+# 业务配置
+ar_box_id: ""   # PERSON Box ID，需从数据库获取
+site_id: ""     # 场地 ID
+
+# 快手连接（可通过命令行覆盖）
+# 获取方式：浏览器打开快手直播间 → 开发者工具 Network → 搜 websocketinfo → 从响应中复制 token，从请求 URL 参数中复制 liveStreamId
+wss_url: "wss://livejs-ws-group5.gifshow.com/websocket"
+token: ""
+live_stream_id: ""
+
+# 礼物触发
+gift_actions:
+  # 玫瑰(1快币) → 10发1级攻击
+  - gift_name: "盛典票"
+    action: "attack_monster_360"
+    worker_group: 0
+    params:
+      shoot_cnt: 10
+      hit_level: 1
+
+  # 啤酒(10快币) → 20发3级攻击
+  - gift_name: "玫瑰"
+    action: "attack_monster_360"
+    worker_group: 0
+    params:
+      shoot_cnt: 10
+      hit_level: 3
+
+  # 跑车(666快币) → 回血
+  - gift_name: "小可爱"
+    action: "heal_monster"
+    worker_group: 1
+
+# 弹幕随机玩法
+chat_action:
+  enabled: true
+  trigger: "666"
+  actions:
+    # 50% 概率：5发1级攻击
+    - action: "attack_monster_360"
+      weight: 50
+      worker_group: 0
+      params:
+        shoot_cnt: 10
+        hit_level: 1
+
+    # 30% 概率：10发1级攻击
+    - action: "attack_monster_360"
+      weight: 20
+      worker_group: 0
+      params:
+        shoot_cnt: 10
+        hit_level: 2
+
+    # 3% 概率：20发3级攻击（风之极-陨杀）
+    - action: "attack_monster_360"
+      weight: 10
+      worker_group: 0
+      params:
+        shoot_cnt: 20
+        hit_level: 3
+
+    # 17% 概率：回血
+    - action: "heal_monster"
+      weight: 17
+      worker_group: 1
