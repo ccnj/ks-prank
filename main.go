@@ -421,8 +421,9 @@ func handleFeedPush(feed *pb.SCWebFeedPush) {
 			count = 1
 		}
 
-		log.Printf("[礼物] %s 送出 %s (%d快币) x%d", userName, giftName, getGiftPrice(giftID), count)
-		go handler.ReportKsGiftLog(ksUid, giftName, count)
+		giftPrice := getGiftPrice(giftID)
+		log.Printf("[礼物] %s 送出 %s (%d快币) x%d", userName, giftName, giftPrice, count)
+		go handler.ReportKsGiftLog(ksUid, giftName, count, giftPrice, gift)
 
 		dispatcher.Dispatch(worker.GiftTask{
 			GiftName:   giftName,

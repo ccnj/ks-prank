@@ -50,16 +50,18 @@ type addKsGiftLogResponse struct {
 	ErrMsg  string `json:"errMsg"`
 }
 
-func ReportKsGiftLog(ksUid, giftName string, count int) {
+func ReportKsGiftLog(ksUid, giftName string, count, giftValue int, rawInfo interface{}) {
 	if glb.HttpClient == nil {
 		return
 	}
 
 	reqBody := map[string]interface{}{
-		"ks_uid":    ksUid,
-		"gift_name": giftName,
-		"count":     count,
-		"sec_key":   lowSecurityKey,
+		"ks_uid":     ksUid,
+		"gift_name":  giftName,
+		"count":      count,
+		"gift_value": giftValue,
+		"raw_info":   rawInfo,
+		"sec_key":    lowSecurityKey,
 	}
 
 	var rsp addKsGiftLogResponse
