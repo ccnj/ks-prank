@@ -28,4 +28,12 @@ var ActionRegistry = map[string]ActionFactory{
 			}
 		}
 	},
+	"throw_cockroach": func(cfg config.GiftActionConfig) worker.GiftAction {
+		return func(task worker.GiftTask) {
+			log.Printf("执行 %s: 丢蟑螂", cfg.GiftName)
+			if err := ThrowCockroach(task.KsNickname, task.KsAvatar, task.Count); err != nil {
+				log.Printf("丢蟑螂失败: %v", err)
+			}
+		}
+	},
 }

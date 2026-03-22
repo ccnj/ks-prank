@@ -37,6 +37,11 @@ gift_actions:
     action: "heal_monster"
     worker_group: 1
 
+  # 炸弹(1快币) → 丢蟑螂
+  - gift_name: "炸弹"
+    action: "throw_cockroach"
+    worker_group: 2
+
 # 弹幕随机玩法
 chat_action:
   enabled: true
