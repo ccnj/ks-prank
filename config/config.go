@@ -35,8 +35,9 @@ type GiftActionConfig struct {
 }
 
 type ActionParams struct {
-	ShootCnt int `mapstructure:"shoot_cnt"`
-	HitLevel int `mapstructure:"hit_level"`
+	ShootCnt   int `mapstructure:"shoot_cnt"`
+	HitLevel   int `mapstructure:"hit_level"`
+	Importance int `mapstructure:"importance"`
 }
 
 type ChatActionConfig struct {

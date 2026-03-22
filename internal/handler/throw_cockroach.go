@@ -24,14 +24,14 @@ type prankEventPayload struct {
 	Count int `json:"count"`
 }
 
-func ThrowCockroach(nickname, avatar string, giftCount int) error {
+func ThrowCockroach(nickname, avatar string, giftCount, importance int) error {
 	if glb.MQTTClient == nil {
 		return fmt.Errorf("mqtt client 未初始化")
 	}
 	giftCount = normalizeGiftCount(giftCount)
 
 	text := fmt.Sprintf("丢蟑螂 x%d", giftCount)
-	if err := publishLiveRoomGiftInfo(nickname, avatar, text, importanceNormal); err != nil {
+	if err := publishLiveRoomGiftInfo(nickname, avatar, text, importance); err != nil {
 		return err
 	}
 

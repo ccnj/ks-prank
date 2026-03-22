@@ -20,13 +20,13 @@ type healMonsterResponse struct {
 	ErrMsg  string `json:"errMsg"`
 }
 
-func HealMonster(nickname, avatar string, giftCount int) error {
+func HealMonster(nickname, avatar string, giftCount, importance int) error {
 	if err := ensureClientsReady(); err != nil {
 		return err
 	}
 	giftCount = normalizeGiftCount(giftCount)
 
-	if err := publishLiveRoomGiftInfo(nickname, avatar, fmt.Sprintf(healMonsterText, giftCount), importanceLow); err != nil {
+	if err := publishLiveRoomGiftInfo(nickname, avatar, fmt.Sprintf(healMonsterText, giftCount), importance); err != nil {
 		return err
 	}
 

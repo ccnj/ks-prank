@@ -50,7 +50,7 @@ type getCurrentMonsterResponse struct {
 	} `json:"data"`
 }
 
-func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel int) error {
+func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel, importance int) error {
 	if err := ensureClientsReady(); err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel int
 
 	skillName := hitLevelSkillName(hitLevel)
 	text := fmt.Sprintf("对主播释放了 %s x%d", skillName, giftCount)
-	if err := publishLiveRoomGiftInfo(nickname, avatar, text, importanceNormal); err != nil {
+	if err := publishLiveRoomGiftInfo(nickname, avatar, text, importance); err != nil {
 		return err
 	}
 

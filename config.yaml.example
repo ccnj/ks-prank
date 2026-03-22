@@ -23,6 +23,7 @@ gift_actions:
     params:
       shoot_cnt: 10
       hit_level: 1
+      importance: 0
 
   # 啤酒(10快币) → 20发3级攻击
   - gift_name: "玫瑰"
@@ -31,16 +32,21 @@ gift_actions:
     params:
       shoot_cnt: 10
       hit_level: 3
+      importance: 1
 
   # 跑车(666快币) → 回血
   - gift_name: "小可爱"
     action: "heal_monster"
     worker_group: 1
+    params:
+      importance: 1
 
   # 炸弹(1快币) → 丢蟑螂
   - gift_name: "炸弹"
     action: "throw_cockroach"
     worker_group: 2
+    params:
+      importance: 0
 
 # 弹幕随机玩法
 chat_action:
@@ -54,6 +60,7 @@ chat_action:
       params:
         shoot_cnt: 10
         hit_level: 1
+        importance: 0
 
     # 30% 概率：10发1级攻击
     - action: "attack_monster_360"
@@ -62,6 +69,7 @@ chat_action:
       params:
         shoot_cnt: 10
         hit_level: 2
+        importance: 0
 
     # 3% 概率：20发3级攻击（风之极-陨杀）
     - action: "attack_monster_360"
@@ -70,8 +78,11 @@ chat_action:
       params:
         shoot_cnt: 20
         hit_level: 3
+        importance: 1
 
     # 17% 概率：回血
     - action: "heal_monster"
       weight: 17
       worker_group: 1
+      params:
+        importance: 0
