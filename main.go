@@ -407,9 +407,11 @@ func handleFeedPush(feed *pb.SCWebFeedPush) {
 		user := gift.User
 		userName := "未知用户"
 		userAvatar := ""
+		ksUid := ""
 		if user != nil {
 			userName = user.GetUserName()
 			userAvatar = user.GetHeadUrl()
+			ksUid = user.GetPrincipalId()
 		}
 
 		giftID := gift.GetGiftId()
@@ -420,6 +422,7 @@ func handleFeedPush(feed *pb.SCWebFeedPush) {
 		}
 
 		log.Printf("[礼物] %s 送出 %s (%d快币) x%d", userName, giftName, getGiftPrice(giftID), count)
+		go handler.ReportKsGiftLog(ksUid, giftName, count)
 
 		dispatcher.Dispatch(worker.GiftTask{
 			GiftName:   giftName,

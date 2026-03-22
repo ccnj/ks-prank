@@ -41,6 +41,41 @@ type liveRoomGiftPayload struct {
 	Importance int    `json:"importance"`
 }
 
+const (
+	addKsGiftLogPath = "/api/v1/fight/low_security/add_ks_gift_log"
+)
+
+type addKsGiftLogResponse struct {
+	ErrCode int    `json:"errCode"`
+	ErrMsg  string `json:"errMsg"`
+}
+
+func ReportKsGiftLog(ksUid, giftName string, count int) {
+	if glb.HttpClient == nil {
+		return
+	}
+
+	reqBody := map[string]interface{}{
+		"ks_uid":    ksUid,
+		"gift_name": giftName,
+		"count":     count,
+		"sec_key":   lowSecurityKey,
+	}
+
+	var rsp addKsGiftLogResponse
+	resp, err := glb.HttpClient.R().
+		SetBody(reqBody).
+		SetResult(&rsp).
+		Post(addKsGiftLogPath)
+	if err != nil {
+		fmt.Printf("记录快手礼物日志失败: %v\n", err)
+		return
+	}
+	if !resp.IsSuccess() || rsp.ErrCode != 0 {
+		fmt.Printf("记录快手礼物日志失败: status=%d errCode=%d errMsg=%s\n", resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
+	}
+}
+
 func ensureClientsReady() error {
 	if glb.HttpClient == nil {
 		return fmt.Errorf("http client 未初始化")
