@@ -18,6 +18,7 @@ type Config struct {
 	SiteId  string `mapstructure:"site_id"`
 
 	// 快手连接
+	LiveUrl      string `mapstructure:"live_url"`
 	WssUrl       string `mapstructure:"wss_url"`
 	Token        string `mapstructure:"token"`
 	LiveStreamId string `mapstructure:"live_stream_id"`

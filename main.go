@@ -475,7 +475,7 @@ func main() {
 	dispatcher.Start()
 	defer dispatcher.Stop()
 
-	// 快手连接参数：优先 config，命令行可覆盖
+	// 快手连接参数：命令行 > config 直接配置 > Chrome 自动获取
 	cfg := config.ConfIns
 	wssURL := cfg.WssUrl
 	token := cfg.Token
@@ -488,7 +488,19 @@ func main() {
 	}
 
 	if token == "" || liveStreamID == "" {
-		log.Fatal("token 和 live_stream_id 不能为空，请在 config.yaml 中配置或通过命令行传入")
+		if cfg.LiveUrl == "" {
+			log.Fatal("token/live_stream_id 为空且未配置 live_url，无法连接")
+		}
+		log.Printf("token 为空，通过 Chrome 自动获取 (live_url: %s)", cfg.LiveUrl)
+		info, err := initialize.FetchWssInfo(cfg.LiveUrl, 120*time.Second)
+		if err != nil {
+			log.Fatalf("自动获取 wss 信息失败: %v", err)
+		}
+		token = info.Token
+		liveStreamID = info.LiveStreamId
+		if info.WssUrl != "" {
+			wssURL = info.WssUrl
+		}
 	}
 
 	log.Printf("liveStreamId: %s", liveStreamID)

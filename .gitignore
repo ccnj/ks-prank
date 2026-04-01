@@ -1,3 +1,6 @@
 ks-prank
 build/
 config.yaml
+.DS_Store
+chrome-user-data/
+.claude/

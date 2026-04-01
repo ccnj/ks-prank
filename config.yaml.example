@@ -8,8 +8,10 @@ mqtt_password: ""
 ar_box_id: ""   # PERSON Box ID，需从数据库获取
 site_id: ""     # 场地 ID
 
-# 快手连接（可通过命令行覆盖）
-# 获取方式：浏览器打开快手直播间 → 开发者工具 Network → 搜 websocketinfo → 从响应中复制 token，从请求 URL 参数中复制 liveStreamId
+# 快手连接
+# 方式1（推荐）：填 live_url，程序自动通过 Chrome 抓取 token 和 wss 地址
+live_url: "https://live.kuaishou.com/u/xxx"
+# 方式2：手动从浏览器开发者工具 Network 搜 websocketinfo，复制 token 和 liveStreamId
 wss_url: "wss://livejs-ws-group5.gifshow.com/websocket"
 token: ""
 live_stream_id: ""
