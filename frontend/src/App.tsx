@@ -23,14 +23,15 @@ import {
   ThunderboltOutlined,
 } from "@ant-design/icons";
 
-// Wails 绑定会在 wails dev 时自动生成到 wailsjs/ 目录
-// 先用 window.go 作为 fallback
-declare global {
-  interface Window {
-    go: any;
-    runtime: any;
-  }
-}
+import {
+  Connect,
+  Disconnect,
+  FetchToken,
+  GetConfig,
+  SaveConfig,
+} from "../wailsjs/go/main/App";
+import { config } from "../wailsjs/go/models";
+import { EventsOn } from "../wailsjs/runtime/runtime";
 
 const { Header, Content } = Layout;
 
@@ -39,19 +40,6 @@ interface EventItem {
   type: "gift" | "comment" | "action" | "status" | "log";
   timestamp: number;
   data: any;
-}
-
-interface AppConfig {
-  server_url: string;
-  mqtt_broker: string;
-  mqtt_username: string;
-  mqtt_password: string;
-  ar_box_id: string;
-  site_id: string;
-  live_url: string;
-  wss_url: string;
-  token: string;
-  live_stream_id: string;
 }
 
 let eventIdCounter = 0;
@@ -63,6 +51,7 @@ function App() {
   const [fetchingToken, setFetchingToken] = useState(false);
   const [form] = Form.useForm();
   const eventsEndRef = useRef<HTMLDivElement>(null);
+  const fullConfigRef = useRef<config.Config>(new config.Config());
 
   const addEvent = useCallback((type: EventItem["type"], data: any) => {
     setEvents((prev) => {
@@ -76,29 +65,25 @@ function App() {
 
   useEffect(() => {
     // 加载配置
-    try {
-      window.go?.main?.App?.GetConfig().then((cfg: AppConfig) => {
-        if (cfg) {
-          form.setFieldsValue(cfg);
-        }
-      });
-    } catch {}
+    GetConfig().then((cfg) => {
+      if (cfg) {
+        fullConfigRef.current = cfg;
+        form.setFieldsValue(cfg);
+      }
+    }).catch(() => {});
 
     // 监听事件
     const unsubs: (() => void)[] = [];
-    const rt = window.runtime;
-    if (rt) {
-      unsubs.push(
-        rt.EventsOn("event:gift", (e: any) => addEvent("gift", e.data)),
-        rt.EventsOn("event:comment", (e: any) => addEvent("comment", e.data)),
-        rt.EventsOn("event:action", (e: any) => addEvent("action", e.data)),
-        rt.EventsOn("event:status", (s: string) => {
-          setStatus(s);
-          addEvent("status", s);
-        }),
-        rt.EventsOn("event:log", (e: any) => addEvent("log", e))
-      );
-    }
+    unsubs.push(
+      EventsOn("event:gift", (e: any) => addEvent("gift", e.data)),
+      EventsOn("event:comment", (e: any) => addEvent("comment", e.data)),
+      EventsOn("event:action", (e: any) => addEvent("action", e.data)),
+      EventsOn("event:status", (s: string) => {
+        setStatus(s);
+        addEvent("status", s);
+      }),
+      EventsOn("event:log", (e: any) => addEvent("log", e))
+    );
 
     return () => unsubs.forEach((fn) => fn?.());
   }, [form, addEvent]);
@@ -107,21 +92,36 @@ function App() {
     eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
+  const saveCurrentConfig = async () => {
+    const formValues = form.getFieldsValue();
+    const merged = new config.Config({ ...fullConfigRef.current, ...formValues });
+    fullConfigRef.current = merged;
+    try {
+      await SaveConfig(merged);
+    } catch (err: any) {
+      message.error("保存配置失败: " + (err?.message || err));
+    }
+  };
+
   const handleFetchToken = async () => {
     const liveUrl = form.getFieldValue("live_url");
     if (!liveUrl) {
       message.warning("请先填写直播间 URL");
       return;
     }
+    // 先保存当前表单（包含 live_url 等手动编辑的字段）
+    await saveCurrentConfig();
     setFetchingToken(true);
     try {
-      const info = await window.go.main.App.FetchToken(liveUrl);
+      const info = await FetchToken(liveUrl);
       if (info) {
         form.setFieldsValue({
           token: info.Token,
           live_stream_id: info.LiveStreamId,
           wss_url: info.WssUrl || form.getFieldValue("wss_url"),
         });
+        // FetchToken 成功后自动保存获取到的 token 信息
+        await saveCurrentConfig();
         message.success("Token 获取成功");
       }
     } catch (err: any) {
@@ -134,7 +134,7 @@ function App() {
   const handleConnect = async () => {
     setLoading(true);
     try {
-      await window.go.main.App.Connect();
+      await Connect();
       message.success("连接成功");
     } catch (err: any) {
       message.error("连接失败: " + (err?.message || err));
@@ -145,7 +145,7 @@ function App() {
 
   const handleDisconnect = async () => {
     try {
-      await window.go.main.App.Disconnect();
+      await Disconnect();
       message.info("已断开");
     } catch (err: any) {
       message.error(err?.message || err);
@@ -182,9 +182,9 @@ function App() {
               </Tag>
               <span style={{ color: "#999", fontSize: 12 }}>{time}</span>
               <span>
-                <strong>{d.username}</strong> 送出{" "}
-                <Tag color="volcano">{d.gift_name}</Tag>
-                {d.price}快币 x{d.count}
+                <strong>{d?.username}</strong> 送出{" "}
+                <Tag color="volcano">{d?.gift_name}</Tag>
+                {d?.price}快币 x{d?.count}
               </span>
             </Space>
           </List.Item>
@@ -200,7 +200,7 @@ function App() {
               </Tag>
               <span style={{ color: "#999", fontSize: 12 }}>{time}</span>
               <span>
-                <strong>{d.username}</strong>: {d.content}
+                <strong>{d?.username}</strong>: {d?.content}
               </span>
             </Space>
           </List.Item>
@@ -315,7 +315,7 @@ function App() {
               </Button>
             }
             style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}
-            bodyStyle={{ flex: 1, overflowY: "auto", padding: "0 16px" }}
+            styles={{ body: { flex: 1, overflowY: "auto", padding: "0 16px" } }}
           >
             {events.length === 0 ? (
               <Descriptions style={{ marginTop: 24 }}>

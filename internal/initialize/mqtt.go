@@ -3,20 +3,27 @@ package initialize
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 
-	"ks-prank/config"
 	glb "ks-prank/internal/global"
 )
 
-func InitMqtt(cfg *config.Config) error {
+// MqttConfig 从服务端获取的 MQTT 连接配置
+type MqttConfig struct {
+	Broker   string
+	Username string
+	Password string
+}
+
+func InitMqtt(mqttCfg *MqttConfig) error {
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(cfg.MqttBroker)
-	opts.SetClientID("ks-prank")
-	opts.SetUsername(cfg.MqttUsername)
-	opts.SetPassword(cfg.MqttPassword)
+	opts.AddBroker(mqttCfg.Broker)
+	opts.SetClientID(fmt.Sprintf("ks-prank-%d", rand.Intn(100000)))
+	opts.SetUsername(mqttCfg.Username)
+	opts.SetPassword(mqttCfg.Password)
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetAutoReconnect(true)
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
@@ -38,4 +45,43 @@ func InitMqtt(cfg *config.Config) error {
 	glb.MQTTClient = client
 	log.Println("[MQTT] 初始化完成")
 	return nil
+}
+
+// FetchMqttConfig 从 luck-pets-server 获取 MQTT 连接配置
+func FetchMqttConfig() (*MqttConfig, error) {
+	if glb.HttpClient == nil {
+		return nil, fmt.Errorf("http client 未初始化")
+	}
+
+	reqBody := map[string]interface{}{
+		"role":    "KS_PRANK",
+		"sec_key": "luckpets@fight#2026",
+	}
+
+	var rsp struct {
+		ErrCode int    `json:"errCode"`
+		ErrMsg  string `json:"errMsg"`
+		Data    struct {
+			Broker   string `json:"broker"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"data"`
+	}
+
+	resp, err := glb.HttpClient.R().
+		SetBody(reqBody).
+		SetResult(&rsp).
+		Post("/api/v1/fight/low_security/get_mqtt_config")
+	if err != nil {
+		return nil, fmt.Errorf("请求 MQTT 配置失败: %w", err)
+	}
+	if !resp.IsSuccess() || rsp.ErrCode != 0 {
+		return nil, fmt.Errorf("获取 MQTT 配置失败: status=%d errCode=%d errMsg=%s", resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
+	}
+
+	return &MqttConfig{
+		Broker:   rsp.Data.Broker,
+		Username: rsp.Data.Username,
+		Password: rsp.Data.Password,
+	}, nil
 }

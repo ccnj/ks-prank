@@ -67,7 +67,10 @@ func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel, im
 		return err
 	}
 
-	step := 360 / (shootCnt - 1)
+	step := 0
+	if shootCnt > 1 {
+		step = 360 / (shootCnt - 1)
+	}
 	for round := 0; round < giftCount; round++ {
 		for i := 0; i < shootCnt; i++ {
 			angle := i * step

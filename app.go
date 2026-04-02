@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,8 +18,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const appConfigFile = "config-ks.yaml"
+var appConfigFile string
 const baseConfigFile = "config.yaml"
+
+func init() {
+	configDir, _ := os.UserConfigDir()
+	appConfigFile = filepath.Join(configDir, "ks-prank", "config-ks.yaml")
+}
 
 type App struct {
 	ctx    context.Context
@@ -49,9 +55,6 @@ func (a *App) OnStartup(ctx context.Context) {
 	glb.Config = cfg
 
 	initialize.InitHttpClient(cfg.ServerURL)
-	if err := initialize.InitMqtt(cfg); err != nil {
-		log.Printf("MQTT 初始化失败（将在连接时重试）: %v", err)
-	}
 }
 
 func (a *App) OnShutdown(ctx context.Context) {
@@ -71,9 +74,6 @@ func (a *App) GetConfig() *config.Config {
 // SaveConfig 保存前端传来的连接配置，保留 gift_actions/chat_action 等原有配置
 func (a *App) SaveConfig(cfg config.Config) error {
 	a.cfg.ServerURL = cfg.ServerURL
-	a.cfg.MqttBroker = cfg.MqttBroker
-	a.cfg.MqttUsername = cfg.MqttUsername
-	a.cfg.MqttPassword = cfg.MqttPassword
 	a.cfg.ArBoxId = cfg.ArBoxId
 	a.cfg.SiteId = cfg.SiteId
 	a.cfg.LiveUrl = cfg.LiveUrl
@@ -130,7 +130,14 @@ func (a *App) Connect() error {
 	runtime.EventsEmit(a.ctx, "event:status", "connecting")
 
 	initialize.InitHttpClient(a.cfg.ServerURL)
-	if err := initialize.InitMqtt(a.cfg); err != nil {
+
+	mqttCfg, err := initialize.FetchMqttConfig()
+	if err != nil {
+		a.status = "disconnected"
+		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		return fmt.Errorf("获取 MQTT 配置失败: %w", err)
+	}
+	if err := initialize.InitMqtt(mqttCfg); err != nil {
 		a.status = "disconnected"
 		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 		return fmt.Errorf("MQTT 连接失败: %w", err)
@@ -195,7 +202,7 @@ func (a *App) Disconnect() error {
 	return nil
 }
 
-// ensureAppConfig 如果 config-ks.yaml 不存在，从 config.yaml 复制一份
+// ensureAppConfig 如果 ~/.ks-prank/config-ks.yaml 不存在，从 config.yaml 复制一份
 func ensureAppConfig() {
 	if _, err := os.Stat(appConfigFile); err == nil {
 		return // 已存在
@@ -206,6 +213,7 @@ func ensureAppConfig() {
 	}
 	defer src.Close()
 
+	os.MkdirAll(filepath.Dir(appConfigFile), 0755)
 	dst, err := os.Create(appConfigFile)
 	if err != nil {
 		return

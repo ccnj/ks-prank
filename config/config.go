@@ -10,10 +10,7 @@ import (
 
 type Config struct {
 	// 服务端配置
-	ServerURL    string `mapstructure:"server_url" json:"server_url" yaml:"server_url"`
-	MqttBroker   string `mapstructure:"mqtt_broker" json:"mqtt_broker" yaml:"mqtt_broker"`
-	MqttUsername string `mapstructure:"mqtt_username" json:"mqtt_username" yaml:"mqtt_username"`
-	MqttPassword string `mapstructure:"mqtt_password" json:"mqtt_password" yaml:"mqtt_password"`
+	ServerURL string `mapstructure:"server_url" json:"server_url" yaml:"server_url"`
 
 	// 业务配置
 	ArBoxId string `mapstructure:"ar_box_id" json:"ar_box_id" yaml:"ar_box_id"`
