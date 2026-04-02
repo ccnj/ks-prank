@@ -6,13 +6,12 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"ks-prank/config"
 	glb "ks-prank/internal/global"
 )
 
-func InitHttpClient() {
+func InitHttpClient(serverURL string) {
 	glb.HttpClient = resty.New().
-		SetBaseURL(config.ConfIns.ServerURL).
+		SetBaseURL(serverURL).
 		SetTimeout(10 * time.Second).
 		SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
 }

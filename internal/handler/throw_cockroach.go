@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"ks-prank/config"
 	glb "ks-prank/internal/global"
 )
 
@@ -53,7 +52,7 @@ func ThrowCockroach(nickname, avatar string, giftCount, importance int) error {
 		return fmt.Errorf("序列化整蛊消息失败: %w", err)
 	}
 
-	topic := fmt.Sprintf(prankEventTopicTpl, config.ConfIns.SiteId)
+	topic := fmt.Sprintf(prankEventTopicTpl, glb.Config.SiteId)
 	token := glb.MQTTClient.Publish(topic, 1, false, body)
 	if !token.WaitTimeout(5 * time.Second) {
 		return fmt.Errorf("发布整蛊消息超时, topic: %s", topic)

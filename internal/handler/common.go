@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"ks-prank/config"
 	glb "ks-prank/internal/global"
 )
 
@@ -117,7 +116,7 @@ func publishLiveRoomGiftInfo(nickname, avatar, text string, importance int) erro
 		return fmt.Errorf("序列化通知消息失败: %w", err)
 	}
 
-	topic := fmt.Sprintf(liveRoomGiftTopicTpl, config.ConfIns.SiteId)
+	topic := fmt.Sprintf(liveRoomGiftTopicTpl, glb.Config.SiteId)
 	token := glb.MQTTClient.Publish(topic, 1, false, body)
 	if !token.WaitTimeout(5 * time.Second) {
 		return fmt.Errorf("发布通知消息超时, topic: %s", topic)

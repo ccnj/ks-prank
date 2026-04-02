@@ -1,6 +1,7 @@
 package initialize
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -10,12 +11,12 @@ import (
 	glb "ks-prank/internal/global"
 )
 
-func InitMqtt() {
+func InitMqtt(cfg *config.Config) error {
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(config.ConfIns.MqttBroker)
+	opts.AddBroker(cfg.MqttBroker)
 	opts.SetClientID("ks-prank")
-	opts.SetUsername(config.ConfIns.MqttUsername)
-	opts.SetPassword(config.ConfIns.MqttPassword)
+	opts.SetUsername(cfg.MqttUsername)
+	opts.SetPassword(cfg.MqttPassword)
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetAutoReconnect(true)
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
@@ -28,12 +29,13 @@ func InitMqtt() {
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	if !token.WaitTimeout(10 * time.Second) {
-		log.Fatal("[MQTT] 连接超时")
+		return fmt.Errorf("MQTT 连接超时")
 	}
 	if token.Error() != nil {
-		log.Fatalf("[MQTT] 连接失败: %v", token.Error())
+		return fmt.Errorf("MQTT 连接失败: %w", token.Error())
 	}
 
 	glb.MQTTClient = client
 	log.Println("[MQTT] 初始化完成")
+	return nil
 }

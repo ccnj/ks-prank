@@ -1,6 +1,10 @@
 ks-prank
 build/
 config.yaml
+config-ks.yaml
 .DS_Store
 chrome-user-data/
 .claude/
+frontend/dist/
+frontend/node_modules/
+frontend/wailsjs/

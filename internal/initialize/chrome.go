@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -35,10 +37,14 @@ func FetchWssInfo(liveUrl string, timeout time.Duration) (*WssInfo, error) {
 		timeout = 120 * time.Second
 	}
 
+	// chrome-user-data 放在用户目录下，避免污染项目目录导致 Wails 文件监视器崩溃
+	homeDir, _ := os.UserHomeDir()
+	chromeDataDir := filepath.Join(homeDir, ".ks-prank", "chrome-user-data")
+
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", false),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.UserDataDir("./chrome-user-data"),
+		chromedp.UserDataDir(chromeDataDir),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer allocCancel()

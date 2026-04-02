@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"ks-prank/config"
 	"ks-prank/internal/consts"
 	glb "ks-prank/internal/global"
 )
@@ -56,7 +55,7 @@ func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel, im
 	}
 	giftCount = normalizeGiftCount(giftCount)
 
-	fightTopic := fmt.Sprintf("BOX/%s/fight", config.ConfIns.ArBoxId)
+	fightTopic := fmt.Sprintf("BOX/%s/fight", glb.Config.ArBoxId)
 	toMonsterID, err := getCurrentMonsterIDByTopic(fightTopic)
 	if err != nil {
 		return err

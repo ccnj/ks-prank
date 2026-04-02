@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"ks-prank/config"
 	"ks-prank/internal/consts"
 	glb "ks-prank/internal/global"
 )
@@ -32,7 +31,7 @@ func HealMonster(nickname, avatar string, giftCount, importance int) error {
 
 	for i := 0; i < giftCount; i++ {
 		reqBody := map[string]interface{}{
-			"ar_box_id": config.ConfIns.ArBoxId,
+			"ar_box_id": glb.Config.ArBoxId,
 			"heal_hp":   healMonsterHp,
 			"sec_key":   consts.LowSecurityKey,
 		}
