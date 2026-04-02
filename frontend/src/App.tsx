@@ -246,7 +246,7 @@ function App() {
         >
           <Space size="middle">
             <span style={{ fontSize: 18, fontWeight: 600 }}>
-              快手整蛊助手
+              萌物·快手整蛊助手
             </span>
             <Badge color={statusColor} text={statusText[status] || status} />
           </Space>
