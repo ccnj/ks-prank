@@ -23,6 +23,9 @@ func HealMonster(nickname, avatar string, giftCount, importance int) error {
 	if err := ensureClientsReady(); err != nil {
 		return err
 	}
+	if glb.Runtime == nil || glb.Runtime.ArBoxId == "" {
+		return fmt.Errorf("未绑定 MONSTER AR 盒子，跳过回血动作")
+	}
 	giftCount = normalizeGiftCount(giftCount)
 
 	if err := publishLiveRoomGiftInfo(nickname, avatar, fmt.Sprintf(healMonsterText, giftCount), importance); err != nil {
@@ -31,7 +34,7 @@ func HealMonster(nickname, avatar string, giftCount, importance int) error {
 
 	for i := 0; i < giftCount; i++ {
 		reqBody := map[string]interface{}{
-			"ar_box_id": glb.Config.ArBoxId,
+			"ar_box_id": glb.Runtime.ArBoxId,
 			"heal_hp":   healMonsterHp,
 			"sec_key":   consts.LowSecurityKey,
 		}

@@ -53,9 +53,12 @@ func AttackMonster360(nickname, avatar string, giftCount, shootCnt, hitLevel, im
 	if err := ensureClientsReady(); err != nil {
 		return err
 	}
+	if glb.Runtime == nil || glb.Runtime.ArBoxId == "" {
+		return fmt.Errorf("未绑定 MONSTER AR 盒子，跳过攻击动作")
+	}
 	giftCount = normalizeGiftCount(giftCount)
 
-	fightTopic := fmt.Sprintf("BOX/%s/fight", glb.Config.ArBoxId)
+	fightTopic := fmt.Sprintf("BOX/%s/fight", glb.Runtime.ArBoxId)
 	toMonsterID, err := getCurrentMonsterIDByTopic(fightTopic)
 	if err != nil {
 		return err

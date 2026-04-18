@@ -5,106 +5,81 @@ import (
 	"sync"
 )
 
-type GiftTask struct {
-	GiftName   string
-	Count      int
-	KsNickname string
-	KsAvatar   string
+// Task 单个待执行任务
+type Task struct {
+	Name        string
+	WorkerGroup int
+	Run         func()
 }
 
-type GiftAction func(task GiftTask)
-
-type GiftDispatcher struct {
-	actions       map[string]GiftAction
-	workerQueues  []chan GiftTask
-	giftToWorker  map[string]int
-	defaultWorker chan GiftTask
+// Dispatcher 按 worker_group 路由任务：同 group 串行、跨 group 并行
+type Dispatcher struct {
+	queues map[int]chan Task
+	mu     sync.Mutex
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
+	qSize    int
 }
 
-func NewGiftDispatcher(actions map[string]GiftAction, giftGroups [][]string, queueSize int) *GiftDispatcher {
+func NewDispatcher(queueSize int) *Dispatcher {
 	if queueSize <= 0 {
 		queueSize = 100
 	}
-
-	d := &GiftDispatcher{
-		actions:       actions,
-		workerQueues:  make([]chan GiftTask, 0, len(giftGroups)),
-		giftToWorker:  make(map[string]int),
-		defaultWorker: make(chan GiftTask, queueSize),
-		stopCh:        make(chan struct{}),
+	return &Dispatcher{
+		queues: make(map[int]chan Task),
+		stopCh: make(chan struct{}),
+		qSize:  queueSize,
 	}
-
-	for i, group := range giftGroups {
-		q := make(chan GiftTask, queueSize)
-		d.workerQueues = append(d.workerQueues, q)
-		for _, gift := range group {
-			if oldIdx, exists := d.giftToWorker[gift]; exists {
-				log.Printf("礼物 %s 被重复分组，沿用 worker-%d，忽略 worker-%d", gift, oldIdx+1, i+1)
-				continue
-			}
-			d.giftToWorker[gift] = i
-		}
-	}
-
-	return d
 }
 
-func (d *GiftDispatcher) Start() {
-	for i, q := range d.workerQueues {
-		d.wg.Add(1)
-		go d.runWorker(i+1, q)
+func (d *Dispatcher) ensureQueue(group int) chan Task {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if q, ok := d.queues[group]; ok {
+		return q
 	}
-
+	q := make(chan Task, d.qSize)
+	d.queues[group] = q
 	d.wg.Add(1)
-	go d.runWorker(0, d.defaultWorker)
+	go d.runWorker(group, q)
+	return q
 }
 
-func (d *GiftDispatcher) Stop() {
+func (d *Dispatcher) Dispatch(t Task) {
+	q := d.ensureQueue(t.WorkerGroup)
+	select {
+	case q <- t:
+	case <-d.stopCh:
+	}
+}
+
+func (d *Dispatcher) Stop() {
 	d.stopOnce.Do(func() {
 		close(d.stopCh)
-		close(d.defaultWorker)
-		for _, q := range d.workerQueues {
+		d.mu.Lock()
+		for _, q := range d.queues {
 			close(q)
 		}
+		d.mu.Unlock()
 		d.wg.Wait()
 	})
 }
 
-func (d *GiftDispatcher) Dispatch(task GiftTask) {
-	if _, ok := d.actions[task.GiftName]; !ok {
-		return
-	}
-
-	if idx, ok := d.giftToWorker[task.GiftName]; ok {
-		d.workerQueues[idx] <- task
-		return
-	}
-
-	d.defaultWorker <- task
-}
-
-func (d *GiftDispatcher) runWorker(workerID int, q <-chan GiftTask) {
+func (d *Dispatcher) runWorker(group int, q <-chan Task) {
 	defer d.wg.Done()
-
 	for {
 		select {
 		case <-d.stopCh:
 			return
-		case task, ok := <-q:
+		case t, ok := <-q:
 			if !ok {
 				return
 			}
-			action, exists := d.actions[task.GiftName]
-			if !exists {
-				continue
-			}
-			log.Printf("worker-%d 开始执行: %s x%d (来自 %s)", workerID, task.GiftName, task.Count, task.KsNickname)
-			action(task)
-			log.Printf("worker-%d 执行完成: %s x%d", workerID, task.GiftName, task.Count)
+			log.Printf("worker-g%d 开始: %s", group, t.Name)
+			t.Run()
+			log.Printf("worker-g%d 完成: %s", group, t.Name)
 		}
 	}
 }

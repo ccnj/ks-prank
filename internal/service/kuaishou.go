@@ -7,12 +7,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"ks-prank/config"
 	"ks-prank/internal/consts"
 	"ks-prank/internal/handler"
 	"ks-prank/internal/protocol"
+	mytypes "ks-prank/internal/types"
 	"ks-prank/internal/worker"
 	pb "ks-prank/proto"
 
@@ -60,99 +61,84 @@ type EventCallback func(event EventPayload)
 // KuaishouClient 快手直播间 WebSocket 客户端
 type KuaishouClient struct {
 	conn       *websocket.Conn
-	dispatcher *worker.GiftDispatcher
+	dispatcher *worker.Dispatcher
 	stopCh     chan struct{}
 	stopOnce   sync.Once
 	eventCb    EventCallback
 
-	// 弹幕随机
-	chatTrigger     string
-	chatEntries     []chatActionEntry
-	chatTotalWeight int
-}
+	prank *mytypes.PrankConfigData
 
-type chatActionEntry struct {
-	virtualGiftName string
-	weight          int
+	giftTriggerMap map[string]*mytypes.GiftTrigger
+	chatTriggerMap map[string]*mytypes.ChatTrigger
+
+	// like 累计
+	likeAccum atomic.Uint64
 }
 
 // NewKuaishouClient 创建客户端
-func NewKuaishouClient(cfg *config.Config, eventCb EventCallback) (*KuaishouClient, error) {
+func NewKuaishouClient(prank *mytypes.PrankConfigData, eventCb EventCallback) *KuaishouClient {
 	kc := &KuaishouClient{
-		stopCh:  make(chan struct{}),
-		eventCb: eventCb,
+		stopCh:         make(chan struct{}),
+		eventCb:        eventCb,
+		prank:          prank,
+		dispatcher:     worker.NewDispatcher(100),
+		giftTriggerMap: make(map[string]*mytypes.GiftTrigger),
+		chatTriggerMap: make(map[string]*mytypes.ChatTrigger),
 	}
-
-	dispatcher, err := kc.buildDispatcher(cfg)
-	if err != nil {
-		return nil, err
+	if prank != nil {
+		for i := range prank.GiftTriggers {
+			t := &prank.GiftTriggers[i]
+			if t.GiftName != "" {
+				kc.giftTriggerMap[t.GiftName] = t
+			}
+		}
+		for i := range prank.ChatTriggers {
+			t := &prank.ChatTriggers[i]
+			if t.Keyword != "" {
+				kc.chatTriggerMap[t.Keyword] = t
+			}
+		}
 	}
-	kc.dispatcher = dispatcher
-
-	return kc, nil
+	return kc
 }
 
-func (kc *KuaishouClient) buildDispatcher(cfg *config.Config) (*worker.GiftDispatcher, error) {
-	actions := make(map[string]worker.GiftAction)
-	groupMap := make(map[int][]string)
-
-	for _, ga := range cfg.GiftActions {
-		factory, ok := handler.ActionRegistry[ga.Action]
-		if !ok {
-			return nil, fmt.Errorf("未知 action: %s (礼物: %s)", ga.Action, ga.GiftName)
-		}
-		actions[ga.GiftName] = factory(ga)
-		groupMap[ga.WorkerGroup] = append(groupMap[ga.WorkerGroup], ga.GiftName)
+// pickChoice 按权重随机挑一个 choice（权重和为 0 时退化到第一个）
+func pickChoice(choices []mytypes.ActionChoice) *mytypes.ActionChoice {
+	if len(choices) == 0 {
+		return nil
 	}
-
-	if cfg.ChatAction != nil && cfg.ChatAction.Enabled {
-		kc.chatTrigger = cfg.ChatAction.Trigger
-		for i, entry := range cfg.ChatAction.Actions {
-			virtualName := fmt.Sprintf("_chat_%d", i)
-			fakeCfg := config.GiftActionConfig{
-				GiftName: virtualName,
-				Action:   entry.Action,
-				Params:   entry.Params,
-			}
-			factory, ok := handler.ActionRegistry[entry.Action]
-			if !ok {
-				return nil, fmt.Errorf("弹幕随机: 未知 action: %s", entry.Action)
-			}
-			actions[virtualName] = factory(fakeCfg)
-			groupMap[entry.WorkerGroup] = append(groupMap[entry.WorkerGroup], virtualName)
-
-			kc.chatEntries = append(kc.chatEntries, chatActionEntry{
-				virtualGiftName: virtualName,
-				weight:          entry.Weight,
-			})
-			kc.chatTotalWeight += entry.Weight
+	total := 0
+	for _, c := range choices {
+		total += c.Weight
+	}
+	if total <= 0 {
+		return &choices[0]
+	}
+	r := rand.Intn(total)
+	cum := 0
+	for i := range choices {
+		cum += choices[i].Weight
+		if r < cum {
+			return &choices[i]
 		}
 	}
-
-	maxGroup := 0
-	for g := range groupMap {
-		if g > maxGroup {
-			maxGroup = g
-		}
-	}
-	giftGroups := make([][]string, maxGroup+1)
-	for g, names := range groupMap {
-		giftGroups[g] = names
-	}
-
-	return worker.NewGiftDispatcher(actions, giftGroups, 100), nil
+	return &choices[len(choices)-1]
 }
 
-func (kc *KuaishouClient) pickRandomChatAction() string {
-	r := rand.Intn(kc.chatTotalWeight)
-	cumulative := 0
-	for _, e := range kc.chatEntries {
-		cumulative += e.weight
-		if r < cumulative {
-			return e.virtualGiftName
-		}
+func (kc *KuaishouClient) dispatchChoice(name string, hctx handler.HandlerCtx, choice *mytypes.ActionChoice) {
+	if choice == nil {
+		return
 	}
-	return kc.chatEntries[len(kc.chatEntries)-1].virtualGiftName
+	c := *choice
+	kc.dispatcher.Dispatch(worker.Task{
+		Name:        name,
+		WorkerGroup: c.WorkerGroup,
+		Run: func() {
+			if err := handler.RunChoice(hctx, c); err != nil {
+				log.Printf("执行 %s 失败: %v", c.Action, err)
+			}
+		},
+	})
 }
 
 func (kc *KuaishouClient) emitEvent(eventType EventType, data any) {
@@ -192,9 +178,6 @@ func (kc *KuaishouClient) Connect(wssURL, token, liveStreamID string) error {
 
 	log.Println("WebSocket 连接成功，已发送进房消息")
 	kc.emitEvent(EventStatus, "connected")
-
-	// 启动 dispatcher
-	kc.dispatcher.Start()
 
 	// 启动心跳
 	go kc.heartbeatLoop()
@@ -287,6 +270,7 @@ func (kc *KuaishouClient) handleSocketMessage(data []byte) {
 }
 
 func (kc *KuaishouClient) handleFeedPush(feed *pb.SCWebFeedPush) {
+	// 礼物
 	for _, gift := range feed.GiftFeeds {
 		user := gift.User
 		userName := "未知用户"
@@ -317,14 +301,17 @@ func (kc *KuaishouClient) handleFeedPush(feed *pb.SCWebFeedPush) {
 			Count:    count,
 		})
 
-		kc.dispatcher.Dispatch(worker.GiftTask{
-			GiftName:   giftName,
-			Count:      count,
-			KsNickname: userName,
-			KsAvatar:   userAvatar,
-		})
+		if trigger, ok := kc.giftTriggerMap[giftName]; ok {
+			choice := pickChoice(trigger.Choices)
+			kc.dispatchChoice(giftName, handler.HandlerCtx{
+				Nickname:  userName,
+				Avatar:    userAvatar,
+				GiftCount: count,
+			}, choice)
+		}
 	}
 
+	// 弹幕
 	for _, comment := range feed.CommentFeeds {
 		user := comment.User
 		userName := "未知用户"
@@ -343,15 +330,31 @@ func (kc *KuaishouClient) handleFeedPush(feed *pb.SCWebFeedPush) {
 			Content:  content,
 		})
 
-		if kc.chatTrigger != "" && content == kc.chatTrigger {
-			virtualName := kc.pickRandomChatAction()
-			log.Printf("[弹幕触发] %s 发送 %s → %s", userName, content, virtualName)
-			kc.dispatcher.Dispatch(worker.GiftTask{
-				GiftName:   virtualName,
-				Count:      1,
-				KsNickname: userName,
-				KsAvatar:   userAvatar,
-			})
+		if trigger, ok := kc.chatTriggerMap[content]; ok {
+			choice := pickChoice(trigger.Choices)
+			kc.dispatchChoice("chat:"+content, handler.HandlerCtx{
+				Nickname:  userName,
+				Avatar:    userAvatar,
+				GiftCount: 1,
+			}, choice)
+		}
+	}
+
+	// 点赞 —— 累计达到阈值即触发
+	if kc.prank != nil && kc.prank.LikeTrigger != nil && kc.prank.LikeTrigger.Threshold > 0 {
+		threshold := kc.prank.LikeTrigger.Threshold
+		for _, like := range feed.LikeFeeds {
+			_ = like
+			nv := kc.likeAccum.Add(1)
+			if nv >= threshold {
+				kc.likeAccum.Store(0)
+				choice := pickChoice(kc.prank.LikeTrigger.Choices)
+				kc.dispatchChoice("like_threshold", handler.HandlerCtx{
+					Nickname:  "观众们",
+					Avatar:    "",
+					GiftCount: 1,
+				}, choice)
+			}
 		}
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,12 +13,14 @@ import (
 	glb "ks-prank/internal/global"
 	"ks-prank/internal/initialize"
 	"ks-prank/internal/service"
+	mytypes "ks-prank/internal/types"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var appConfigFile string
-const baseConfigFile = "config.yaml"
+
+const defaultServerURL = "https://mwapi.ybkc.cc"
 
 func init() {
 	configDir, _ := os.UserConfigDir()
@@ -27,11 +28,12 @@ func init() {
 }
 
 type App struct {
-	ctx    context.Context
-	mu     sync.Mutex
-	client *service.KuaishouClient
-	cfg    *config.Config
-	status string // disconnected / connecting / connected / fetching_token
+	ctx     context.Context
+	mu      sync.Mutex
+	client  *service.KuaishouClient
+	cfg     *config.Config
+	profile *mytypes.Profile
+	status  string // disconnected / connecting / connected / fetching_token
 }
 
 func NewApp() *App {
@@ -41,20 +43,21 @@ func NewApp() *App {
 func (a *App) OnStartup(ctx context.Context) {
 	a.ctx = ctx
 
-	// 首次启动：如果 config-ks.yaml 不存在，从 config.yaml 复制一份
-	ensureAppConfig()
-
 	cfg, err := config.LoadConfig(appConfigFile)
 	if err != nil {
-		log.Printf("加载配置失败: %v", err)
-		cfg = &config.Config{
-			WssUrl: "wss://livejs-ws-group5.gifshow.com/websocket",
-		}
+		log.Printf("加载配置失败: %v（使用默认）", err)
+		cfg = &config.Config{ServerURL: defaultServerURL}
+	}
+	if cfg.ServerURL == "" {
+		cfg.ServerURL = defaultServerURL
 	}
 	a.cfg = cfg
 	glb.Config = cfg
 
 	initialize.InitHttpClient(cfg.ServerURL)
+	if cfg.AuthToken != "" {
+		service.SetAuthToken(cfg.AuthToken)
+	}
 }
 
 func (a *App) OnShutdown(ctx context.Context) {
@@ -66,71 +69,157 @@ func (a *App) OnShutdown(ctx context.Context) {
 	}
 }
 
-// GetConfig 返回当前配置给前端
-func (a *App) GetConfig() *config.Config {
-	return a.cfg
+func (a *App) persistConfig() {
+	_ = os.MkdirAll(filepath.Dir(appConfigFile), 0755)
+	if err := config.SaveConfig(appConfigFile, a.cfg); err != nil {
+		log.Printf("保存配置失败: %v", err)
+	}
 }
 
-// SaveConfig 保存前端传来的连接配置，保留 gift_actions/chat_action 等原有配置
-func (a *App) SaveConfig(cfg config.Config) error {
-	a.cfg.ServerURL = cfg.ServerURL
-	a.cfg.ArBoxId = cfg.ArBoxId
-	a.cfg.SiteId = cfg.SiteId
-	a.cfg.LiveUrl = cfg.LiveUrl
-	a.cfg.WssUrl = cfg.WssUrl
-	a.cfg.Token = cfg.Token
-	a.cfg.LiveStreamId = cfg.LiveStreamId
+// ===== 认证 =====
 
-	glb.Config = a.cfg
-	return config.SaveConfig(appConfigFile, a.cfg)
+// LoginState 返回给前端用于判断登录态
+type LoginState struct {
+	LoggedIn bool   `json:"loggedIn"`
+	Username string `json:"username,omitempty"`
 }
+
+func (a *App) GetLoginState() *LoginState {
+	if a.cfg.AuthToken == "" {
+		return &LoginState{LoggedIn: false}
+	}
+	// token 存在时尝试拉 profile 验证是否还有效，由前端通过 GetProfile 判断
+	name := ""
+	if a.profile != nil {
+		name = a.profile.User.Username
+	}
+	return &LoginState{LoggedIn: true, Username: name}
+}
+
+func (a *App) Login(username, password string) error {
+	initialize.InitHttpClient(a.cfg.ServerURL)
+	token, err := service.AdminLogin(username, password)
+	if err != nil {
+		return err
+	}
+	a.cfg.AuthToken = token
+	service.SetAuthToken(token)
+	a.persistConfig()
+	return nil
+}
+
+func (a *App) Logout() error {
+	a.mu.Lock()
+	if a.client != nil {
+		a.client.Close()
+		a.client = nil
+		a.status = "disconnected"
+		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+	}
+	a.mu.Unlock()
+
+	a.cfg.AuthToken = ""
+	a.cfg.LastAccountId = ""
+	a.profile = nil
+	service.SetAuthToken("")
+	a.persistConfig()
+	return nil
+}
+
+// GetProfile 主动刷新 profile（登录后调用）
+func (a *App) GetProfile() (*mytypes.Profile, error) {
+	if a.cfg.AuthToken == "" {
+		return nil, fmt.Errorf("未登录")
+	}
+	p, err := service.GetProfile()
+	if err != nil {
+		return nil, err
+	}
+	a.profile = p
+	return p, nil
+}
+
+// GetLastAccountId 记住上次用的直播账号
+func (a *App) GetLastAccountId() string {
+	return a.cfg.LastAccountId
+}
+
+// ===== 连接 =====
 
 // GetStatus 返回当前连接状态
 func (a *App) GetStatus() string {
 	return a.status
 }
 
-// FetchToken 通过 Chrome 自动获取 WSS 信息
-func (a *App) FetchToken(liveUrl string) (*initialize.WssInfo, error) {
-	a.status = "fetching_token"
-	runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
-
-	info, err := initialize.FetchWssInfo(liveUrl, 120*time.Second)
-	if err != nil {
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-		return nil, fmt.Errorf("获取 WSS 信息失败: %w", err)
-	}
-
-	a.cfg.Token = info.Token
-	a.cfg.LiveStreamId = info.LiveStreamId
-	if info.WssUrl != "" {
-		a.cfg.WssUrl = info.WssUrl
-	}
-
-	a.status = "disconnected"
-	runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-	return info, nil
-}
-
-// Connect 连接快手直播间
-func (a *App) Connect() error {
+// Connect 用指定的直播账号连接。需要先 Login + GetProfile 过。
+func (a *App) Connect(liveAccountId string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	if a.client != nil {
-		return fmt.Errorf("已经连接中")
+		return fmt.Errorf("已经连接中，请先断开")
+	}
+	if a.profile == nil {
+		return fmt.Errorf("请先加载 profile")
+	}
+	if a.profile.Site == nil {
+		return fmt.Errorf("当前账号未绑定场地")
 	}
 
-	if a.cfg.Token == "" || a.cfg.LiveStreamId == "" {
-		return fmt.Errorf("token 或 live_stream_id 为空")
+	var account *mytypes.LiveAccount
+	for _, acc := range a.profile.LiveAccounts {
+		if acc.Id == liveAccountId {
+			account = acc
+			break
+		}
+	}
+	if account == nil {
+		return fmt.Errorf("未找到指定的直播账号")
+	}
+	if !account.Enabled {
+		return fmt.Errorf("该直播账号已停用")
+	}
+	if account.LiveUrl == "" {
+		return fmt.Errorf("直播账号 URL 为空")
 	}
 
+	// 自动挑第一个 MONSTER 类型的 AR 盒子（没有也允许连接，仅攻击/回血类动作会在运行时 no-op）
+	var monsterBoxId string
+	for _, b := range a.profile.ArBoxes {
+		if b.Type == "MONSTER" {
+			monsterBoxId = b.Id
+			break
+		}
+	}
+
+	// 拉取服务端整蛊配置
+	prank, err := service.GetPrankConfig(a.profile.Site.Id, account.Platform)
+	if err != nil {
+		return fmt.Errorf("获取整蛊配置失败: %w", err)
+	}
+
+	// 写入 runtime
+	glb.Runtime = &mytypes.RuntimeConfig{
+		SiteId:   a.profile.Site.Id,
+		ArBoxId:  monsterBoxId,
+		LiveUrl:  account.LiveUrl,
+		Platform: account.Platform,
+		Prank:    prank,
+	}
+
+	// 1) 通过 Chrome 获取 wss token
+	a.status = "fetching_token"
+	runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
+	info, err := initialize.FetchWssInfo(account.LiveUrl, 120*time.Second)
+	if err != nil {
+		a.status = "disconnected"
+		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		return fmt.Errorf("获取 WSS token 失败: %w", err)
+	}
+
+	// 2) MQTT
 	a.status = "connecting"
 	runtime.EventsEmit(a.ctx, "event:status", "connecting")
-
-	initialize.InitHttpClient(a.cfg.ServerURL)
-
 	mqttCfg, err := initialize.FetchMqttConfig()
 	if err != nil {
 		a.status = "disconnected"
@@ -143,28 +232,21 @@ func (a *App) Connect() error {
 		return fmt.Errorf("MQTT 连接失败: %w", err)
 	}
 
+	// 3) 启动快手 WebSocket 客户端
 	eventCb := func(event service.EventPayload) {
 		if event.Type == service.EventStatus {
-			// status 事件前端期望接收字符串
 			runtime.EventsEmit(a.ctx, "event:status", event.Data)
 			return
 		}
 		runtime.EventsEmit(a.ctx, "event:"+string(event.Type), event)
 	}
+	client := service.NewKuaishouClient(prank, eventCb)
 
-	client, err := service.NewKuaishouClient(a.cfg, eventCb)
-	if err != nil {
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-		return err
-	}
-
-	wssURL := a.cfg.WssUrl
+	wssURL := info.WssUrl
 	if wssURL == "" {
 		wssURL = "wss://livejs-ws-group5.gifshow.com/websocket"
 	}
-
-	if err := client.Connect(wssURL, a.cfg.Token, a.cfg.LiveStreamId); err != nil {
+	if err := client.Connect(wssURL, info.Token, info.LiveStreamId); err != nil {
 		a.status = "disconnected"
 		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 		return err
@@ -173,6 +255,9 @@ func (a *App) Connect() error {
 	a.client = client
 	a.status = "connected"
 	runtime.EventsEmit(a.ctx, "event:status", "connected")
+
+	a.cfg.LastAccountId = liveAccountId
+	a.persistConfig()
 
 	go func() {
 		client.Listen()
@@ -186,7 +271,6 @@ func (a *App) Connect() error {
 	return nil
 }
 
-// Disconnect 断开连接
 func (a *App) Disconnect() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -194,32 +278,9 @@ func (a *App) Disconnect() error {
 	if a.client == nil {
 		return fmt.Errorf("未连接")
 	}
-
 	a.client.Close()
 	a.client = nil
 	a.status = "disconnected"
 	runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 	return nil
-}
-
-// ensureAppConfig 如果 ~/.ks-prank/config-ks.yaml 不存在，从 config.yaml 复制一份
-func ensureAppConfig() {
-	if _, err := os.Stat(appConfigFile); err == nil {
-		return // 已存在
-	}
-	src, err := os.Open(baseConfigFile)
-	if err != nil {
-		return // config.yaml 也不存在，跳过
-	}
-	defer src.Close()
-
-	os.MkdirAll(filepath.Dir(appConfigFile), 0755)
-	dst, err := os.Create(appConfigFile)
-	if err != nil {
-		return
-	}
-	defer dst.Close()
-
-	io.Copy(dst, src)
-	log.Printf("已从 %s 创建 %s", baseConfigFile, appConfigFile)
 }
