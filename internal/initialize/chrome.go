@@ -160,6 +160,64 @@ func FetchWssInfo(liveUrl string, timeout time.Duration) (*WssInfo, error) {
 	}
 }
 
+// FetchDouyinWssUrl 在 Chrome 里打开抖音直播间，捕获 app_name=douyin_web 的 WSS URL。
+// Douyin 页面加载后会自行建立弹幕 WebSocket，我们只做被动监听。
+func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	chromeDataDir := filepath.Join(homeDir, ".ks-prank", "chrome-user-data-dy")
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", false),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.UserDataDir(chromeDataDir),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer allocCancel()
+
+	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	defer ctxCancel()
+
+	ctx, timeoutCancel := context.WithTimeout(ctx, timeout)
+	defer timeoutCancel()
+
+	resultCh := make(chan string, 1)
+	var once sync.Once
+
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		e, ok := ev.(*network.EventWebSocketCreated)
+		if !ok {
+			return
+		}
+		u := e.URL
+		if !strings.Contains(u, "app_name=douyin_web") {
+			return
+		}
+		preview := u
+		if len(preview) > 160 {
+			preview = preview[:160] + "..."
+		}
+		log.Printf("[Chrome] 捕获抖音 WSS: %s", preview)
+		once.Do(func() { resultCh <- u })
+	})
+
+	if err := chromedp.Run(ctx, network.Enable(), chromedp.Navigate(liveUrl)); err != nil {
+		return "", fmt.Errorf("Chrome 导航失败: %w", err)
+	}
+	log.Println("[Chrome] 已打开抖音直播间，等待 WebSocket 建立...")
+
+	select {
+	case u := <-resultCh:
+		speak("抖音直播间数据获取成功")
+		return u, nil
+	case <-ctx.Done():
+		return "", fmt.Errorf("获取抖音 WSS URL 超时")
+	}
+}
+
 func parseLiveStreamId(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {

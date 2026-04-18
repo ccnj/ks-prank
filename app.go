@@ -256,8 +256,15 @@ func (a *App) Connect(liveAccountId string) error {
 		client = ksClient
 
 	case "douyin":
-		// 抖音端直接用 live_url 字段存 WSS URL（从浏览器 devtools 复制）
-		dyClient, derr := service.NewDouyinPrankClient(account.LiveUrl, prank, eventCb)
+		a.status = "fetching_token"
+		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
+		wssURL, ferr := initialize.FetchDouyinWssUrl(account.LiveUrl, 120*time.Second)
+		if ferr != nil {
+			a.status = "disconnected"
+			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			return fmt.Errorf("获取抖音 WSS URL 失败: %w", ferr)
+		}
+		dyClient, derr := service.NewDouyinPrankClient(wssURL, prank, eventCb)
 		if derr != nil {
 			a.status = "disconnected"
 			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
