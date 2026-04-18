@@ -21,6 +21,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// PrankClient 所有平台整蛊客户端的统一接口
+type PrankClient interface {
+	Listen()
+	Close()
+}
+
 // EventType 事件类型
 type EventType string
 

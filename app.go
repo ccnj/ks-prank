@@ -30,7 +30,7 @@ func init() {
 type App struct {
 	ctx     context.Context
 	mu      sync.Mutex
-	client  *service.KuaishouClient
+	client  service.PrankClient
 	cfg     *config.Config
 	profile *mytypes.Profile
 	status  string // disconnected / connecting / connected / fetching_token
@@ -200,6 +200,7 @@ func (a *App) Connect(liveAccountId string) error {
 
 	// 写入 runtime
 	glb.Runtime = &mytypes.RuntimeConfig{
+		UserId:   a.profile.User.Id,
 		SiteId:   a.profile.Site.Id,
 		ArBoxId:  monsterBoxId,
 		LiveUrl:  account.LiveUrl,
@@ -207,17 +208,15 @@ func (a *App) Connect(liveAccountId string) error {
 		Prank:    prank,
 	}
 
-	// 1) 通过 Chrome 获取 wss token
-	a.status = "fetching_token"
-	runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
-	info, err := initialize.FetchWssInfo(account.LiveUrl, 120*time.Second)
-	if err != nil {
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-		return fmt.Errorf("获取 WSS token 失败: %w", err)
+	eventCb := func(event service.EventPayload) {
+		if event.Type == service.EventStatus {
+			runtime.EventsEmit(a.ctx, "event:status", event.Data)
+			return
+		}
+		runtime.EventsEmit(a.ctx, "event:"+string(event.Type), event)
 	}
 
-	// 2) MQTT
+	// 1) MQTT（两个平台都要）
 	a.status = "connecting"
 	runtime.EventsEmit(a.ctx, "event:status", "connecting")
 	mqttCfg, err := initialize.FetchMqttConfig()
@@ -232,24 +231,43 @@ func (a *App) Connect(liveAccountId string) error {
 		return fmt.Errorf("MQTT 连接失败: %w", err)
 	}
 
-	// 3) 启动快手 WebSocket 客户端
-	eventCb := func(event service.EventPayload) {
-		if event.Type == service.EventStatus {
-			runtime.EventsEmit(a.ctx, "event:status", event.Data)
-			return
+	// 2) 根据平台构建客户端
+	var client service.PrankClient
+	switch account.Platform {
+	case "kuaishou":
+		a.status = "fetching_token"
+		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
+		info, ferr := initialize.FetchWssInfo(account.LiveUrl, 120*time.Second)
+		if ferr != nil {
+			a.status = "disconnected"
+			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			return fmt.Errorf("获取 WSS token 失败: %w", ferr)
 		}
-		runtime.EventsEmit(a.ctx, "event:"+string(event.Type), event)
-	}
-	client := service.NewKuaishouClient(prank, eventCb)
+		ksClient := service.NewKuaishouClient(prank, eventCb)
+		wssURL := info.WssUrl
+		if wssURL == "" {
+			wssURL = "wss://livejs-ws-group5.gifshow.com/websocket"
+		}
+		if err := ksClient.Connect(wssURL, info.Token, info.LiveStreamId); err != nil {
+			a.status = "disconnected"
+			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			return err
+		}
+		client = ksClient
 
-	wssURL := info.WssUrl
-	if wssURL == "" {
-		wssURL = "wss://livejs-ws-group5.gifshow.com/websocket"
-	}
-	if err := client.Connect(wssURL, info.Token, info.LiveStreamId); err != nil {
+	case "douyin":
+		// 抖音端直接用 live_url 字段存 WSS URL（从浏览器 devtools 复制）
+		dyClient, derr := service.NewDouyinPrankClient(account.LiveUrl, prank, eventCb)
+		if derr != nil {
+			a.status = "disconnected"
+			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			return fmt.Errorf("抖音连接失败: %w", derr)
+		}
+		client = dyClient
+
+	default:
 		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-		return err
+		return fmt.Errorf("暂不支持的平台: %s", account.Platform)
 	}
 
 	a.client = client

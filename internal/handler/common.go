@@ -42,20 +42,29 @@ type liveRoomGiftPayload struct {
 
 const (
 	addKsGiftLogPath = "/api/v1/fight/low_security/add_ks_gift_log"
+	addDyGiftLogPath = "/api/v1/fight/low_security/add_dy_gift_log"
 )
 
-type addKsGiftLogResponse struct {
+type addGiftLogResponse struct {
 	ErrCode int    `json:"errCode"`
 	ErrMsg  string `json:"errMsg"`
 }
 
 func ReportKsGiftLog(ksUid, giftName string, count, giftValue int, rawInfo interface{}) {
+	reportGiftLog(addKsGiftLogPath, "ks_uid", ksUid, giftName, count, giftValue, rawInfo, "快手")
+}
+
+func ReportDyGiftLog(dyUid, giftName string, count, giftValue int, rawInfo interface{}) {
+	reportGiftLog(addDyGiftLogPath, "dy_uid", dyUid, giftName, count, giftValue, rawInfo, "抖音")
+}
+
+func reportGiftLog(path, uidKey, uid, giftName string, count, giftValue int, rawInfo interface{}, label string) {
 	if glb.HttpClient == nil {
 		return
 	}
 
 	reqBody := map[string]interface{}{
-		"ks_uid":     ksUid,
+		uidKey:       uid,
 		"gift_name":  giftName,
 		"count":      count,
 		"gift_value": giftValue,
@@ -63,17 +72,17 @@ func ReportKsGiftLog(ksUid, giftName string, count, giftValue int, rawInfo inter
 		"sec_key":    lowSecurityKey,
 	}
 
-	var rsp addKsGiftLogResponse
+	var rsp addGiftLogResponse
 	resp, err := glb.HttpClient.R().
 		SetBody(reqBody).
 		SetResult(&rsp).
-		Post(addKsGiftLogPath)
+		Post(path)
 	if err != nil {
-		fmt.Printf("记录快手礼物日志失败: %v\n", err)
+		fmt.Printf("记录%s礼物日志失败: %v\n", label, err)
 		return
 	}
 	if !resp.IsSuccess() || rsp.ErrCode != 0 {
-		fmt.Printf("记录快手礼物日志失败: status=%d errCode=%d errMsg=%s\n", resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
+		fmt.Printf("记录%s礼物日志失败: status=%d errCode=%d errMsg=%s\n", label, resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
 	}
 }
 

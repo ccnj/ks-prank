@@ -67,6 +67,7 @@ type Profile struct {
 
 // RuntimeConfig 连接期间的完整业务上下文（不持久化）
 type RuntimeConfig struct {
+	UserId   string
 	SiteId   string
 	ArBoxId  string
 	LiveUrl  string

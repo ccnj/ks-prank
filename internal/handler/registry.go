@@ -64,6 +64,47 @@ var Handlers = map[string]HandlerFn{
 		log.Printf("执行 throw_cockroach: count=%d", p.Count)
 		return ThrowCockroach(ctx.Nickname, ctx.Avatar, ctx.GiftCount*p.Count, p.Importance)
 	},
+
+	"add_monster": func(ctx HandlerCtx, params json.RawMessage) error {
+		var p struct {
+			MonsterTplID string `json:"monster_tpl_id"`
+			Importance   int    `json:"importance"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return fmt.Errorf("解析 add_monster 参数失败: %w", err)
+			}
+		}
+		log.Printf("执行 add_monster: tpl=%s", p.MonsterTplID)
+		return AddMonster(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.MonsterTplID, p.Importance)
+	},
+
+	"update_aa_level": func(ctx HandlerCtx, params json.RawMessage) error {
+		var p struct {
+			LevelDelta int `json:"level_delta"`
+			Importance int `json:"importance"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return fmt.Errorf("解析 update_aa_level 参数失败: %w", err)
+			}
+		}
+		log.Printf("执行 update_aa_level: delta=%d", p.LevelDelta)
+		return UpdateUserAaLevel(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.LevelDelta, p.Importance)
+	},
+
+	"spin": func(ctx HandlerCtx, params json.RawMessage) error {
+		var p struct {
+			Importance int `json:"importance"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return fmt.Errorf("解析 spin 参数失败: %w", err)
+			}
+		}
+		log.Printf("执行 spin")
+		return Spin(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.Importance)
+	},
 }
 
 // RunChoice 按 choice 指定的 action 执行
