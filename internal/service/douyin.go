@@ -156,30 +156,32 @@ func (kc *DouyinPrankClient) handleGift(user *pb.User, giftInfo *pb.GiftMessage)
 
 	describe := strings.TrimSpace(giftInfo.Common.Describe)
 	if !strings.Contains(describe, sendToAnchorMark) {
-		// 送给 PK 对面主播，忽略
 		if strings.Contains(describe, ":送给") {
 			return
 		}
-		log.Printf("抖音礼物消息格式异常: %s", describe)
+		log.Printf("礼物消息格式异常: %s", describe)
 		return
 	}
 	parts := strings.SplitN(describe, sendToAnchorMark, 2)
 	if len(parts) < 2 {
+		log.Printf("礼物消息格式异常: %s", describe)
 		return
 	}
 	userName := parts[0]
 	giftParts := strings.SplitN(parts[1], "个", 2)
 	if len(giftParts) < 2 {
+		log.Printf("礼物消息格式异常: %s", describe)
 		return
 	}
 	count, err := strconv.Atoi(strings.TrimSpace(giftParts[0]))
 	if err != nil {
+		log.Printf("礼物数量转换失败: %v", err)
 		return
 	}
 	giftName := strings.TrimSpace(giftParts[1])
 
-	// 抖音礼物会先发连击中消息（count 累计但 RepeatEnd=0），只在最终态 dispatch
-	if !((count == 1 && giftInfo.RepeatEnd == 1) ||
+	// 单发为 count=1&RepeatEnd=0；连击过程中 count 累计、RepeatEnd=0；结束时 RepeatEnd=1
+	if !((count == 1 && giftInfo.RepeatEnd != 1) ||
 		(giftInfo.RepeatEnd == 1 && count != 1)) {
 		return
 	}

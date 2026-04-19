@@ -184,8 +184,21 @@ func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (string, error) {
 	ctx, timeoutCancel := context.WithTimeout(ctx, timeout)
 	defer timeoutCancel()
 
+	var mu sync.Mutex
+	var candidates []string
 	resultCh := make(chan string, 1)
-	var once sync.Once
+	settleTimer := time.AfterFunc(3*time.Second, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		best := pickBestDouyinWss(candidates)
+		if best != "" {
+			select {
+			case resultCh <- best:
+			default:
+			}
+		}
+	})
+	settleTimer.Stop() // 初始不启动，等第一个 URL 到达才 Reset
 
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		e, ok := ev.(*network.EventWebSocketCreated)
@@ -196,12 +209,17 @@ func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (string, error) {
 		if !strings.Contains(u, "app_name=douyin_web") {
 			return
 		}
+		mu.Lock()
+		candidates = append(candidates, u)
+		idx := len(candidates)
+		mu.Unlock()
 		preview := u
 		if len(preview) > 160 {
 			preview = preview[:160] + "..."
 		}
-		log.Printf("[Chrome] 捕获抖音 WSS: %s", preview)
-		once.Do(func() { resultCh <- u })
+		log.Printf("[Chrome] 捕获候选 WSS #%d: %s", idx, preview)
+		// 3 秒内收集所有候选，然后选最合适的
+		settleTimer.Reset(3 * time.Second)
 	})
 
 	if err := chromedp.Run(ctx, network.Enable(), chromedp.Navigate(liveUrl)); err != nil {
@@ -211,11 +229,35 @@ func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (string, error) {
 
 	select {
 	case u := <-resultCh:
+		log.Printf("[Chrome] 最终选中 WSS（共 %d 个候选）", func() int {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(candidates)
+		}())
 		speak("抖音直播间数据获取成功")
 		return u, nil
 	case <-ctx.Done():
 		return "", fmt.Errorf("获取抖音 WSS URL 超时")
 	}
+}
+
+// pickBestDouyinWss 在多个候选里挑最可能是 IM push 主通道的那个：
+// 优先选 path 含 /webcast/im/push/v2/ 且 identity=audience 的 URL。
+// 多个都匹配时选最后一个（最新建立的，cursor 通常最准）。
+func pickBestDouyinWss(candidates []string) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	var best string
+	for _, u := range candidates {
+		if strings.Contains(u, "/webcast/im/push/v2/") && strings.Contains(u, "identity=audience") {
+			best = u
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return candidates[len(candidates)-1]
 }
 
 func parseLiveStreamId(rawURL string) string {
