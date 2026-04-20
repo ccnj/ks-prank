@@ -36,14 +36,19 @@ type DouyinClient struct {
 	heartbeatInterval time.Duration
 }
 
-func NewDouyinClient(wssURL string, config MessageHandlerConfig) (*DouyinClient, error) {
+func NewDouyinClient(wssURL string, cookies string, config MessageHandlerConfig) (*DouyinClient, error) {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 5 * time.Second,
 	}
 
 	headers := http.Header{}
-	headers.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
-	headers.Add("Cookie", `ttwid=1%7C7ZLJzwjjEw7NLeADTpVd-3eId-ZEIg0jpCEzTV9p_2A%7C1677681848%7C4ff4f97328ddc18b6d46c259bc26a05d2e654b50e3f21b27b8f9e9e8f9fcec82`)
+	headers.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
+	// Cookie 来自 chromedp 当前登录态，拨号才能被服务端当作「登录用户」，否则收不到 WebcastGiftMessage
+	if cookies != "" {
+		headers.Add("Cookie", cookies)
+	} else {
+		log.Printf("[抖音拨号] 无 Cookie（匿名拨号，礼物可能拿不到）")
+	}
 
 	conn, _, err := dialer.Dial(wssURL, headers)
 	if err != nil {

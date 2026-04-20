@@ -107,6 +107,29 @@ MQTT 凭证在每次连接时从 luck-pets-server 动态获取（`FetchMqttConfi
 | `SITE/{site_id}/prank_event` | 整蛊事件（丢蟑螂） | throw_cockroach |
 | `SITE/{site_id}/live_room_gift` | 礼物通知（展示在 AR 页面） | 所有 action |
 
+### 抖音连接（关键：必须登录态 Cookie）
+
+**现象（截至 2026-04）**：抖音直播 WS 服务端会按登录态分层下发消息——
+- **匿名/未登录**：只推 `WebcastChatMessage`（弹幕）、`WebcastLikeMessage`（点赞）等公共消息；
+- **已登录**：才会下发 `WebcastGiftMessage`（礼物）、`WebcastMemberMessage` 等完整消息流。
+
+也就是说：**抖音端拿不到礼物 ≠ 协议解析出错，而是服务端根本没推**。排查顺序：先确认登录态 Cookie，再怀疑解析/过滤问题。
+
+**ks-prank 的做法**（`internal/initialize/chrome.go`）：
+1. chromedp 使用持久化 UserDataDir：`~/.ks-prank/chrome-user-data-dy`（Windows: `%USERPROFILE%\.ks-prank\chrome-user-data-dy`），登录态跨进程复用。
+2. Chrome 先导航到 `https://www.douyin.com/` 首页，轮询 `.douyin.com` 域的 `sessionid` Cookie；未检测到则 `speak("检测到当前未登录抖音账号，请先登录")` + 日志提醒，用户在浏览器中完成扫码登录后自动继续。
+3. 检测到 `sessionid` 后 sleep 3 秒，让 `sessionid_ss` / `sid_guard` / `ttwid` 轮换等后续 Cookie 落位。
+4. 跳转直播间，`ListenTarget` 只接受 URL 含 `app_name=douyin_web` **且** 路径 `/webcast/im/push/` 的 WebSocket（抖音首页会开 `bytelink` WS，必须过滤掉）。
+5. `pickBestDouyinWss` 优先选带 `identity=audience` 的弹幕主通道。
+6. 用 `network.GetCookies` 抓所有 `.douyin.com` Cookie，拼成 `Cookie` header 透传给 Go 拨号器（`pkg/douyincrawler/client.go` 的 `NewDouyinClient`）。
+
+**容易踩的坑**：
+- 老代码里硬编码过一条 2023 年的匿名 ttwid（`1677681848` 是 timestamp），2026 年依然能完成 WS 握手、能收弹幕，但服务端不认为这是登录用户→**不推礼物**。不要再回退到硬编码 Cookie。
+- 「先访问首页、后跳直播间」的流程会在首页阶段捕获非弹幕 WS（如 bytelink），WSS 候选过滤器必须按路径收紧，否则 settle 定时器提前触发、fallback 选错通道。
+- 手动复制登录 Chrome 的 WSS URL 贴进 Go 也没用——URL 本身不含登录凭证，Cookie 必须 header 带进去。
+
+快手端（`FetchWssInfo`）不受此限：它通过 `websocketinfo` HTTP 接口换取 token，拿 token 拨号，服务端不校验账号 Cookie。
+
 ### HTTP API 调用（→ luck-pets-server）
 
 | Path | 用途 |

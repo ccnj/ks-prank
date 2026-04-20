@@ -39,8 +39,9 @@ type DouyinPrankClient struct {
 	closed         atomic.Bool
 }
 
-// NewDouyinPrankClient 构造抖音端客户端
-func NewDouyinPrankClient(wssURL string, prank *mytypes.PrankConfigData, eventCb EventCallback) (*DouyinPrankClient, error) {
+// NewDouyinPrankClient 构造抖音端客户端。cookies 来自 chromedp 抓取的 .douyin.com 登录态，
+// 没登录时礼物消息服务端不会下发，必须透传。
+func NewDouyinPrankClient(wssURL string, cookies string, prank *mytypes.PrankConfigData, eventCb EventCallback) (*DouyinPrankClient, error) {
 	kc := &DouyinPrankClient{
 		dispatcher:     worker.NewDispatcher(200),
 		deduper:        newGiftDeduper(3 * time.Minute),
@@ -74,7 +75,7 @@ func NewDouyinPrankClient(wssURL string, prank *mytypes.PrankConfigData, eventCb
 		MemberHandler: &dyMemberBridge{},
 		LikeHandler:   &dyLikeBridge{owner: kc},
 	}
-	crawler, err := douyincrawler.NewDouyinClient(wssURL, cfg)
+	crawler, err := douyincrawler.NewDouyinClient(wssURL, cookies, cfg)
 	if err != nil {
 		return nil, err
 	}

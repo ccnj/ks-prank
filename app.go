@@ -258,13 +258,14 @@ func (a *App) Connect(liveAccountId string) error {
 	case "douyin":
 		a.status = "fetching_token"
 		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
-		wssURL, ferr := initialize.FetchDouyinWssUrl(account.LiveUrl, 120*time.Second)
+		// 5 分钟预算：覆盖用户在新 Chrome 里扫码登录抖音的时间
+		info, ferr := initialize.FetchDouyinWssUrl(account.LiveUrl, 5*time.Minute)
 		if ferr != nil {
 			a.status = "disconnected"
 			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 			return fmt.Errorf("获取抖音 WSS URL 失败: %w", ferr)
 		}
-		dyClient, derr := service.NewDouyinPrankClient(wssURL, prank, eventCb)
+		dyClient, derr := service.NewDouyinPrankClient(info.WssUrl, info.Cookies, prank, eventCb)
 		if derr != nil {
 			a.status = "disconnected"
 			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
