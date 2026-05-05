@@ -27,6 +27,7 @@ export function SidePanel({
   const arBoxes = profile?.ar_boxes || [];
   const monsterBox = arBoxes.find((b) => b.type === "MONSTER");
   const currentAccount = accounts.find((a) => a.id === accountId);
+  const prankDeviceSn = profile?.prank_device_sn || "";
 
   const showSteps = status !== "disconnected";
 
@@ -48,6 +49,19 @@ export function SidePanel({
                   </Tag>
                 ) : (
                   <Tag color="default">未绑定（不影响连接）</Tag>
+                )}
+              </div>
+              <div>
+                <Text type="secondary">整蛊设备：</Text>
+                {prankDeviceSn ? (
+                  <Tag
+                    color="orange"
+                    style={{ fontFamily: "monospace" }}
+                  >
+                    {prankDeviceSn}
+                  </Tag>
+                ) : (
+                  <Tag color="default">未配置（pet_feed/pet_tease 触发会跳过）</Tag>
                 )}
               </div>
             </Space>

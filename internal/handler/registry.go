@@ -105,6 +105,34 @@ var Handlers = map[string]HandlerFn{
 		log.Printf("执行 spin")
 		return Spin(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.Importance)
 	},
+
+	"pet_feed": func(ctx HandlerCtx, params json.RawMessage) error {
+		var p struct {
+			DurationMs int `json:"duration_ms"`
+			Importance int `json:"importance"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return fmt.Errorf("解析 pet_feed 参数失败: %w", err)
+			}
+		}
+		log.Printf("执行 pet_feed: duration_ms=%d", p.DurationMs)
+		return PetFeed(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.DurationMs, p.Importance)
+	},
+
+	"pet_tease": func(ctx HandlerCtx, params json.RawMessage) error {
+		var p struct {
+			DurationMs int `json:"duration_ms"`
+			Importance int `json:"importance"`
+		}
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &p); err != nil {
+				return fmt.Errorf("解析 pet_tease 参数失败: %w", err)
+			}
+		}
+		log.Printf("执行 pet_tease: duration_ms=%d", p.DurationMs)
+		return PetTease(ctx.Nickname, ctx.Avatar, ctx.GiftCount, p.DurationMs, p.Importance)
+	},
 }
 
 // RunChoice 按 choice 指定的 action 执行

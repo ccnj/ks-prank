@@ -63,14 +63,17 @@ type Profile struct {
 	Site         *SiteSimple    `json:"site"`
 	ArBoxes      []ArBox        `json:"ar_boxes"`
 	LiveAccounts []*LiveAccount `json:"live_accounts"`
+	// 该场地配置的整蛊目标车 SN(无配置时为空,pet_feed/pet_tease 等动作会跳过)
+	PrankDeviceSn string `json:"prank_device_sn"`
 }
 
 // RuntimeConfig 连接期间的完整业务上下文（不持久化）
 type RuntimeConfig struct {
-	UserId   string
-	SiteId   string
-	ArBoxId  string
-	LiveUrl  string
-	Platform string
-	Prank    *PrankConfigData
+	UserId        string
+	SiteId        string
+	ArBoxId       string
+	LiveUrl       string
+	Platform      string
+	PrankDeviceSn string
+	Prank         *PrankConfigData
 }

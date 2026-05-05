@@ -200,12 +200,13 @@ func (a *App) Connect(liveAccountId string) error {
 
 	// 写入 runtime
 	glb.Runtime = &mytypes.RuntimeConfig{
-		UserId:   a.profile.User.Id,
-		SiteId:   a.profile.Site.Id,
-		ArBoxId:  monsterBoxId,
-		LiveUrl:  account.LiveUrl,
-		Platform: account.Platform,
-		Prank:    prank,
+		UserId:        a.profile.User.Id,
+		SiteId:        a.profile.Site.Id,
+		ArBoxId:       monsterBoxId,
+		LiveUrl:       account.LiveUrl,
+		Platform:      account.Platform,
+		PrankDeviceSn: a.profile.PrankDeviceSn,
+		Prank:         prank,
 	}
 
 	eventCb := func(event service.EventPayload) {
