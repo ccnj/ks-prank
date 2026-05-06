@@ -1,7 +1,12 @@
-import { Card, Empty, Form, Select, Space, Spin, Tag, Typography } from "antd";
+import { ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Empty, Form, Select, Space, Spin, Tag, Typography } from "antd";
 import type { types } from "../../wailsjs/go/models";
-import { PLATFORM_COLOR, PLATFORM_LABEL } from "../types";
-import { ConnectionSteps } from "./ConnectionSteps";
+import {
+  PLATFORM_COLOR,
+  PLATFORM_LABEL,
+  type PrankRules,
+  joinChoiceLabels,
+} from "../types";
 
 const { Text } = Typography;
 
@@ -11,7 +16,9 @@ interface SidePanelProps {
   accountId: string;
   onAccountChange: (id: string) => void;
   isConnected: boolean;
-  status: string;
+  rules: PrankRules | null;
+  rulesLoading: boolean;
+  onRefreshRules: () => void;
 }
 
 export function SidePanel({
@@ -20,7 +27,9 @@ export function SidePanel({
   accountId,
   onAccountChange,
   isConnected,
-  status,
+  rules,
+  rulesLoading,
+  onRefreshRules,
 }: SidePanelProps) {
   const site = profile?.site;
   const accounts = (profile?.live_accounts || []).filter((a) => a.enabled);
@@ -29,7 +38,7 @@ export function SidePanel({
   const currentAccount = accounts.find((a) => a.id === accountId);
   const prankDeviceSn = profile?.prank_device_sn || "";
 
-  const showSteps = status !== "disconnected";
+  const giftTriggers = rules?.gift_triggers || [];
 
   return (
     <div style={{ width: 360, flexShrink: 0, overflowY: "auto" }}>
@@ -131,11 +140,49 @@ export function SidePanel({
           )}
         </Card>
 
-        {showSteps && (
-          <Card size="small" title="连接进度">
-            <ConnectionSteps status={status} />
-          </Card>
-        )}
+        <Card
+          size="small"
+          title="礼物配置"
+          extra={
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={onRefreshRules}
+              loading={rulesLoading}
+              disabled={!accountId}
+            />
+          }
+        >
+          <Spin spinning={rulesLoading}>
+            {giftTriggers.length === 0 ? (
+              <Empty
+                description={accountId ? "暂无配置" : "请先选择直播账号"}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                {giftTriggers.map((g, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 13,
+                    }}
+                  >
+                    <Tag color="volcano" style={{ margin: 0 }}>
+                      {g.gift_name}
+                    </Tag>
+                    <span style={{ color: "#999" }}>→</span>
+                    <Text>{joinChoiceLabels(g.choices || [])}</Text>
+                  </div>
+                ))}
+              </Space>
+            )}
+          </Spin>
+        </Card>
       </Spin>
     </div>
   );

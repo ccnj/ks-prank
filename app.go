@@ -144,6 +144,28 @@ func (a *App) GetLastAccountId() string {
 	return a.cfg.LastAccountId
 }
 
+// GetPrankRules 拉取指定直播账号对应（site_id + platform）的礼物/弹幕/点赞规则。
+// 仅依赖已加载的 profile，无需先连接直播间。
+func (a *App) GetPrankRules(liveAccountId string) (*mytypes.PrankConfigData, error) {
+	if a.profile == nil {
+		return nil, fmt.Errorf("请先加载 profile")
+	}
+	if a.profile.Site == nil {
+		return nil, fmt.Errorf("当前账号未绑定场地")
+	}
+	var account *mytypes.LiveAccount
+	for _, acc := range a.profile.LiveAccounts {
+		if acc.Id == liveAccountId {
+			account = acc
+			break
+		}
+	}
+	if account == nil {
+		return nil, fmt.Errorf("未找到指定的直播账号")
+	}
+	return service.GetPrankConfig(a.profile.Site.Id, account.Platform)
+}
+
 // ===== 连接 =====
 
 // GetStatus 返回当前连接状态

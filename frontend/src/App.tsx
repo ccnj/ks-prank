@@ -1,6 +1,15 @@
 import { ConfigProvider, Layout, Spin, message, theme } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
+import * as WailsApp from "../wailsjs/go/main/App";
+import type { types } from "../wailsjs/go/models";
+import { EventsOn } from "../wailsjs/runtime/runtime";
+import { EventStream } from "./components/EventStream";
+import { HeaderBar } from "./components/HeaderBar";
+import { LoginPage } from "./components/LoginPage";
+import { SidePanel } from "./components/SidePanel";
+import type { EventItem, PrankRules } from "./types";
+
+const {
   Connect,
   Disconnect,
   GetLastAccountId,
@@ -8,14 +17,10 @@ import {
   GetProfile,
   Login,
   Logout,
-} from "../wailsjs/go/main/App";
-import type { types } from "../wailsjs/go/models";
-import { EventsOn } from "../wailsjs/runtime/runtime";
-import { EventStream } from "./components/EventStream";
-import { HeaderBar } from "./components/HeaderBar";
-import { LoginPage } from "./components/LoginPage";
-import { SidePanel } from "./components/SidePanel";
-import type { EventItem } from "./types";
+} = WailsApp;
+// d.ts 由 wails dev 重新生成，目前先 any 兜底
+const GetPrankRules: (liveAccountId: string) => Promise<PrankRules> =
+  (WailsApp as any).GetPrankRules;
 
 const { Content } = Layout;
 
@@ -32,9 +37,27 @@ function App() {
   const [status, setStatus] = useState("disconnected");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [connectLoading, setConnectLoading] = useState(false);
+  const [rules, setRules] = useState<PrankRules | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(false);
 
   const accountIdRef = useRef("");
   accountIdRef.current = accountId;
+
+  const fetchRules = useCallback(async (id: string) => {
+    if (!id) {
+      setRules(null);
+      return;
+    }
+    setRulesLoading(true);
+    try {
+      const r = await GetPrankRules(id);
+      setRules(r);
+    } catch {
+      setRules(null);
+    } finally {
+      setRulesLoading(false);
+    }
+  }, []);
 
   const addEvent = useCallback((type: EventItem["type"], data: any) => {
     setEvents((prev) => {
@@ -93,6 +116,14 @@ function App() {
     return () => unsubs.forEach((fn) => fn?.());
   }, [addEvent, refreshProfile]);
 
+  useEffect(() => {
+    if (loggedIn && accountId) {
+      fetchRules(accountId);
+    } else {
+      setRules(null);
+    }
+  }, [loggedIn, accountId, fetchRules]);
+
   const handleLogin = async (name: string, password: string) => {
     await Login(name, password);
     setUsername(name);
@@ -108,6 +139,7 @@ function App() {
     setAccountId("");
     setStatus("disconnected");
     setEvents([]);
+    setRules(null);
   };
 
   const handleConnect = async () => {
@@ -186,7 +218,9 @@ function App() {
             accountId={accountId}
             onAccountChange={setAccountId}
             isConnected={isConnected}
-            status={status}
+            rules={rules}
+            rulesLoading={rulesLoading}
+            onRefreshRules={() => fetchRules(accountId)}
           />
           <EventStream events={events} onClear={() => setEvents([])} />
         </Content>
