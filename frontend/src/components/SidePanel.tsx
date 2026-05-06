@@ -1,6 +1,7 @@
-import { ReloadOutlined } from "@ant-design/icons";
+import { EditOutlined, ReloadOutlined } from "@ant-design/icons";
 import { Button, Card, Empty, Form, Select, Space, Spin, Tag, Typography } from "antd";
 import type { types } from "../../wailsjs/go/models";
+import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import {
   PLATFORM_COLOR,
   PLATFORM_LABEL,
@@ -10,6 +11,8 @@ import {
 
 const { Text } = Typography;
 
+const PRANK_CONFIG_URL = "https://adm.ybkc.cc/ar/prank-configs";
+
 interface SidePanelProps {
   profile: types.Profile | null;
   profileLoading: boolean;
@@ -18,6 +21,7 @@ interface SidePanelProps {
   isConnected: boolean;
   rules: PrankRules | null;
   rulesLoading: boolean;
+  onRefreshProfile: () => void;
   onRefreshRules: () => void;
 }
 
@@ -29,6 +33,7 @@ export function SidePanel({
   isConnected,
   rules,
   rulesLoading,
+  onRefreshProfile,
   onRefreshRules,
 }: SidePanelProps) {
   const site = profile?.site;
@@ -43,7 +48,20 @@ export function SidePanel({
   return (
     <div style={{ width: 360, flexShrink: 0, overflowY: "auto" }}>
       <Spin spinning={profileLoading}>
-        <Card size="small" title="场地信息" style={{ marginBottom: 12 }}>
+        <Card
+          size="small"
+          title="场地信息"
+          style={{ marginBottom: 12 }}
+          extra={
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={onRefreshProfile}
+              loading={profileLoading}
+            />
+          }
+        >
           {site ? (
             <Space direction="vertical" size={4}>
               <div>
@@ -82,7 +100,20 @@ export function SidePanel({
           )}
         </Card>
 
-        <Card size="small" title="直播账号" style={{ marginBottom: 12 }}>
+        <Card
+          size="small"
+          title="直播账号"
+          style={{ marginBottom: 12 }}
+          extra={
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={onRefreshProfile}
+              loading={profileLoading}
+            />
+          }
+        >
           {accounts.length === 0 ? (
             <Empty
               description="暂无直播账号，请在管理后台添加"
@@ -144,14 +175,23 @@ export function SidePanel({
           size="small"
           title="礼物配置"
           extra={
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={onRefreshRules}
-              loading={rulesLoading}
-              disabled={!accountId}
-            />
+            <Space size={0}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={onRefreshRules}
+                loading={rulesLoading}
+                disabled={!accountId}
+              />
+              <Button
+                size="small"
+                type="text"
+                icon={<EditOutlined />}
+                onClick={() => BrowserOpenURL(PRANK_CONFIG_URL)}
+                title="去管理后台编辑"
+              />
+            </Space>
           }
         >
           <Spin spinning={rulesLoading}>

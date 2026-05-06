@@ -220,6 +220,7 @@ function App() {
             isConnected={isConnected}
             rules={rules}
             rulesLoading={rulesLoading}
+            onRefreshProfile={refreshProfile}
             onRefreshRules={() => fetchRules(accountId)}
           />
           <EventStream events={events} onClear={() => setEvents([])} />
