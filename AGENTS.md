@@ -13,6 +13,10 @@ Despite the name, the current app supports both:
 
 The app logs into LuckPets admin APIs, loads the current user's site, AR boxes, live accounts, and prank rules, connects to the selected live account, listens for gifts/comments/likes, and dispatches configured prank actions through MQTT and low-security HTTP APIs.
 
+## Repository Conventions
+
+- Commit messages should be written in Chinese by default.
+
 ## Build And Run
 
 ```bash
