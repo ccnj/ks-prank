@@ -28,12 +28,14 @@ func init() {
 }
 
 type App struct {
-	ctx     context.Context
-	mu      sync.Mutex
-	client  service.PrankClient
-	cfg     *config.Config
-	profile *mytypes.Profile
-	status  string // disconnected / connecting / connected / fetching_token
+	ctx           context.Context
+	mu            sync.Mutex
+	client        service.PrankClient
+	connectCancel context.CancelFunc
+	connectToken  *struct{}
+	cfg           *config.Config
+	profile       *mytypes.Profile
+	status        string // disconnected / connecting / connected / fetching_token
 }
 
 func NewApp() *App {
@@ -62,11 +64,95 @@ func (a *App) OnStartup(ctx context.Context) {
 
 func (a *App) OnShutdown(ctx context.Context) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.client != nil {
-		a.client.Close()
-		a.client = nil
+	cancel := a.connectCancel
+	client := a.client
+	a.connectCancel = nil
+	a.connectToken = nil
+	a.client = nil
+	a.status = "disconnected"
+	a.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
+	if client != nil {
+		client.Close()
+	}
+	initialize.CloseMqtt()
+	glb.Runtime = nil
+}
+
+func (a *App) stopConnection() bool {
+	a.mu.Lock()
+	cancel := a.connectCancel
+	client := a.client
+	if cancel == nil && client == nil {
+		a.mu.Unlock()
+		return false
+	}
+	a.connectCancel = nil
+	a.connectToken = nil
+	a.client = nil
+	a.status = "disconnected"
+	a.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if client != nil {
+		client.Close()
+	}
+	initialize.CloseMqtt()
+	glb.Runtime = nil
+	runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+	return true
+}
+
+func (a *App) finishConnect(token *struct{}, client service.PrankClient) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.connectToken != token {
+		return false
+	}
+	a.connectCancel = nil
+	a.connectToken = nil
+	a.client = client
+	a.status = "connected"
+	return true
+}
+
+func (a *App) failConnect(token *struct{}) {
+	matched := false
+	var cancel context.CancelFunc
+	a.mu.Lock()
+	if a.connectToken == token {
+		cancel = a.connectCancel
+		a.connectCancel = nil
+		a.connectToken = nil
+		a.status = "disconnected"
+		matched = true
+	}
+	a.mu.Unlock()
+	if !matched {
+		return
+	}
+	if cancel != nil {
+		cancel()
+	}
+	initialize.CloseMqtt()
+	glb.Runtime = nil
+	runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+}
+
+func (a *App) clearFinishedClient(client service.PrankClient) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.client != client {
+		return false
+	}
+	a.client = nil
+	a.status = "disconnected"
+	return true
 }
 
 func (a *App) persistConfig() {
@@ -109,14 +195,7 @@ func (a *App) Login(username, password string) error {
 }
 
 func (a *App) Logout() error {
-	a.mu.Lock()
-	if a.client != nil {
-		a.client.Close()
-		a.client = nil
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
-	}
-	a.mu.Unlock()
+	a.stopConnection()
 
 	a.cfg.AuthToken = ""
 	a.cfg.LastAccountId = ""
@@ -170,38 +249,46 @@ func (a *App) GetPrankRules(liveAccountId string) (*mytypes.PrankConfigData, err
 
 // GetStatus 返回当前连接状态
 func (a *App) GetStatus() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.status
 }
 
 // Connect 用指定的直播账号连接。需要先 Login + GetProfile 过。
 func (a *App) Connect(liveAccountId string) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.client != nil {
+	if a.client != nil || a.connectCancel != nil {
+		a.mu.Unlock()
 		return fmt.Errorf("已经连接中，请先断开")
 	}
 	if a.profile == nil {
+		a.mu.Unlock()
 		return fmt.Errorf("请先加载 profile")
 	}
 	if a.profile.Site == nil {
+		a.mu.Unlock()
 		return fmt.Errorf("当前账号未绑定场地")
 	}
 
-	var account *mytypes.LiveAccount
+	var account mytypes.LiveAccount
+	foundAccount := false
 	for _, acc := range a.profile.LiveAccounts {
 		if acc.Id == liveAccountId {
-			account = acc
+			account = *acc
+			foundAccount = true
 			break
 		}
 	}
-	if account == nil {
+	if !foundAccount {
+		a.mu.Unlock()
 		return fmt.Errorf("未找到指定的直播账号")
 	}
 	if !account.Enabled {
+		a.mu.Unlock()
 		return fmt.Errorf("该直播账号已停用")
 	}
 	if account.LiveUrl == "" {
+		a.mu.Unlock()
 		return fmt.Errorf("直播账号 URL 为空")
 	}
 
@@ -214,20 +301,43 @@ func (a *App) Connect(liveAccountId string) error {
 		}
 	}
 
+	userId := a.profile.User.Id
+	siteId := a.profile.Site.Id
+	prankDeviceSn := a.profile.PrankDeviceSn
+	connCtx, cancel := context.WithCancel(context.Background())
+	token := &struct{}{}
+	a.connectCancel = cancel
+	a.connectToken = token
+	a.status = "connecting"
+	a.mu.Unlock()
+	runtime.EventsEmit(a.ctx, "event:status", "connecting")
+
+	checkCanceled := func() error {
+		if connCtx.Err() != nil {
+			return fmt.Errorf("连接已取消")
+		}
+		return nil
+	}
+
 	// 拉取服务端整蛊配置
-	prank, err := service.GetPrankConfig(a.profile.Site.Id, account.Platform)
+	prank, err := service.GetPrankConfig(siteId, account.Platform)
 	if err != nil {
+		a.failConnect(token)
 		return fmt.Errorf("获取整蛊配置失败: %w", err)
+	}
+	if err := checkCanceled(); err != nil {
+		a.failConnect(token)
+		return err
 	}
 
 	// 写入 runtime
 	glb.Runtime = &mytypes.RuntimeConfig{
-		UserId:        a.profile.User.Id,
-		SiteId:        a.profile.Site.Id,
+		UserId:        userId,
+		SiteId:        siteId,
 		ArBoxId:       monsterBoxId,
 		LiveUrl:       account.LiveUrl,
 		Platform:      account.Platform,
-		PrankDeviceSn: a.profile.PrankDeviceSn,
+		PrankDeviceSn: prankDeviceSn,
 		Prank:         prank,
 	}
 
@@ -239,32 +349,42 @@ func (a *App) Connect(liveAccountId string) error {
 		runtime.EventsEmit(a.ctx, "event:"+string(event.Type), event)
 	}
 
-	// 1) MQTT（两个平台都要）
-	a.status = "connecting"
-	runtime.EventsEmit(a.ctx, "event:status", "connecting")
 	mqttCfg, err := initialize.FetchMqttConfig()
 	if err != nil {
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		a.failConnect(token)
 		return fmt.Errorf("获取 MQTT 配置失败: %w", err)
 	}
+	if err := checkCanceled(); err != nil {
+		a.failConnect(token)
+		return err
+	}
 	if err := initialize.InitMqtt(mqttCfg); err != nil {
-		a.status = "disconnected"
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		a.failConnect(token)
 		return fmt.Errorf("MQTT 连接失败: %w", err)
+	}
+	if err := checkCanceled(); err != nil {
+		a.failConnect(token)
+		return err
 	}
 
 	// 2) 根据平台构建客户端
 	var client service.PrankClient
 	switch account.Platform {
 	case "kuaishou":
-		a.status = "fetching_token"
+		a.mu.Lock()
+		if a.connectToken == token {
+			a.status = "fetching_token"
+		}
+		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
-		info, ferr := initialize.FetchWssInfo(account.LiveUrl, 120*time.Second)
+		info, ferr := initialize.FetchWssInfoContext(connCtx, account.LiveUrl, 120*time.Second)
 		if ferr != nil {
-			a.status = "disconnected"
-			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			a.failConnect(token)
 			return fmt.Errorf("获取 WSS token 失败: %w", ferr)
+		}
+		if err := checkCanceled(); err != nil {
+			a.failConnect(token)
+			return err
 		}
 		ksClient := service.NewKuaishouClient(prank, eventCb)
 		wssURL := info.WssUrl
@@ -272,37 +392,46 @@ func (a *App) Connect(liveAccountId string) error {
 			wssURL = "wss://livejs-ws-group5.gifshow.com/websocket"
 		}
 		if err := ksClient.Connect(wssURL, info.Token, info.LiveStreamId); err != nil {
-			a.status = "disconnected"
-			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			a.failConnect(token)
 			return err
 		}
 		client = ksClient
 
 	case "douyin":
-		a.status = "fetching_token"
+		a.mu.Lock()
+		if a.connectToken == token {
+			a.status = "fetching_token"
+		}
+		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
 		// 5 分钟预算：覆盖用户在新 Chrome 里扫码登录抖音的时间
-		info, ferr := initialize.FetchDouyinWssUrl(account.LiveUrl, 5*time.Minute)
+		info, ferr := initialize.FetchDouyinWssUrlContext(connCtx, account.LiveUrl, 5*time.Minute)
 		if ferr != nil {
-			a.status = "disconnected"
-			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			a.failConnect(token)
 			return fmt.Errorf("获取抖音 WSS URL 失败: %w", ferr)
+		}
+		if err := checkCanceled(); err != nil {
+			a.failConnect(token)
+			return err
 		}
 		dyClient, derr := service.NewDouyinPrankClient(info.WssUrl, info.Cookies, prank, eventCb)
 		if derr != nil {
-			a.status = "disconnected"
-			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+			a.failConnect(token)
 			return fmt.Errorf("抖音连接失败: %w", derr)
 		}
 		client = dyClient
 
 	default:
-		a.status = "disconnected"
+		a.failConnect(token)
 		return fmt.Errorf("暂不支持的平台: %s", account.Platform)
 	}
 
-	a.client = client
-	a.status = "connected"
+	if !a.finishConnect(token, client) {
+		cancel()
+		client.Close()
+		return fmt.Errorf("连接已取消")
+	}
+	cancel()
 	runtime.EventsEmit(a.ctx, "event:status", "connected")
 
 	a.cfg.LastAccountId = liveAccountId
@@ -310,26 +439,20 @@ func (a *App) Connect(liveAccountId string) error {
 
 	go func() {
 		client.Listen()
-		a.mu.Lock()
-		a.client = nil
-		a.status = "disconnected"
-		a.mu.Unlock()
-		runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		client.Close()
+		if a.clearFinishedClient(client) {
+			initialize.CloseMqtt()
+			glb.Runtime = nil
+			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
+		}
 	}()
 
 	return nil
 }
 
 func (a *App) Disconnect() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.client == nil {
+	if !a.stopConnection() {
 		return fmt.Errorf("未连接")
 	}
-	a.client.Close()
-	a.client = nil
-	a.status = "disconnected"
-	runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 	return nil
 }

@@ -34,5 +34,8 @@ func SaveConfig(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }

@@ -153,7 +153,12 @@ function App() {
       await Connect(id);
       message.success("连接成功");
     } catch (err: any) {
-      message.error("连接失败: " + (err?.message || err));
+      const text = err?.message || String(err);
+      if (text.includes("连接已取消")) {
+        message.info("连接已取消");
+      } else {
+        message.error("连接失败: " + text);
+      }
     } finally {
       setConnectLoading(false);
     }
@@ -193,6 +198,7 @@ function App() {
 
   const isConnected = status === "connected";
   const inProgress = status === "connecting" || status === "fetching_token";
+  const isActive = isConnected || inProgress;
   const displayName = profile?.user?.nickname || username || "账号";
 
   return (
@@ -200,7 +206,7 @@ function App() {
       <Layout style={{ height: "100vh" }}>
         <HeaderBar
           status={status}
-          isConnected={isConnected}
+          isConnected={isActive}
           connectLoading={connectLoading || inProgress}
           canConnect={!!accountId && !inProgress}
           displayName={displayName}
@@ -217,7 +223,7 @@ function App() {
             profileLoading={profileLoading}
             accountId={accountId}
             onAccountChange={setAccountId}
-            isConnected={isConnected}
+            isConnected={isActive}
             rules={rules}
             rulesLoading={rulesLoading}
             onRefreshProfile={refreshProfile}

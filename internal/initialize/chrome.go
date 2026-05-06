@@ -33,8 +33,15 @@ type websocketInfoResponse struct {
 }
 
 func FetchWssInfo(liveUrl string, timeout time.Duration) (*WssInfo, error) {
+	return FetchWssInfoContext(context.Background(), liveUrl, timeout)
+}
+
+func FetchWssInfoContext(parent context.Context, liveUrl string, timeout time.Duration) (*WssInfo, error) {
 	if timeout <= 0 {
 		timeout = 120 * time.Second
+	}
+	if parent == nil {
+		parent = context.Background()
 	}
 
 	// chrome-user-data 放在用户目录下，避免污染项目目录导致 Wails 文件监视器崩溃
@@ -46,7 +53,7 @@ func FetchWssInfo(liveUrl string, timeout time.Duration) (*WssInfo, error) {
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.UserDataDir(chromeDataDir),
 	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
 	defer allocCancel()
 
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
@@ -156,6 +163,9 @@ func FetchWssInfo(liveUrl string, timeout time.Duration) (*WssInfo, error) {
 	case err := <-errCh:
 		return nil, err
 	case <-ctx.Done():
+		if ctx.Err() == context.Canceled {
+			return nil, fmt.Errorf("获取 websocketinfo 已取消")
+		}
 		return nil, fmt.Errorf("获取 websocketinfo 超时")
 	}
 }
@@ -171,8 +181,15 @@ type DouyinWssInfo struct {
 // 并抓取当前浏览器 .douyin.com 域下的 Cookie，供 Go 拨号器直接透传。
 // Douyin 页面加载后会自行建立弹幕 WebSocket，我们只做被动监听。
 func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (*DouyinWssInfo, error) {
+	return FetchDouyinWssUrlContext(context.Background(), liveUrl, timeout)
+}
+
+func FetchDouyinWssUrlContext(parent context.Context, liveUrl string, timeout time.Duration) (*DouyinWssInfo, error) {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
+	}
+	if parent == nil {
+		parent = context.Background()
 	}
 
 	homeDir, _ := os.UserHomeDir()
@@ -183,7 +200,7 @@ func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (*DouyinWssInfo, e
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.UserDataDir(chromeDataDir),
 	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
 	defer allocCancel()
 
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
@@ -267,6 +284,9 @@ func FetchDouyinWssUrl(liveUrl string, timeout time.Duration) (*DouyinWssInfo, e
 		speak("抖音直播间数据获取成功")
 		return &DouyinWssInfo{WssUrl: u, Cookies: cookies}, nil
 	case <-ctx.Done():
+		if ctx.Err() == context.Canceled {
+			return nil, fmt.Errorf("获取抖音 WSS URL 已取消")
+		}
 		return nil, fmt.Errorf("获取抖音 WSS URL 超时")
 	}
 }
@@ -302,6 +322,9 @@ func waitForDouyinLogin(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				return fmt.Errorf("等待抖音登录已取消")
+			}
 			return fmt.Errorf("等待抖音登录超时")
 		case <-time.After(2 * time.Second):
 		}

@@ -19,6 +19,8 @@ type MqttConfig struct {
 }
 
 func InitMqtt(mqttCfg *MqttConfig) error {
+	CloseMqtt()
+
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(mqttCfg.Broker)
 	opts.SetClientID(fmt.Sprintf("ks-prank-%d", rand.Intn(100000)))
@@ -45,6 +47,18 @@ func InitMqtt(mqttCfg *MqttConfig) error {
 	glb.MQTTClient = client
 	log.Println("[MQTT] 初始化完成")
 	return nil
+}
+
+func CloseMqtt() {
+	if glb.MQTTClient == nil {
+		return
+	}
+	client := glb.MQTTClient
+	glb.MQTTClient = nil
+	if client.IsConnected() || client.IsConnectionOpen() {
+		client.Disconnect(250)
+		log.Println("[MQTT] 已关闭")
+	}
 }
 
 // FetchMqttConfig 从 luck-pets-server 获取 MQTT 连接配置
