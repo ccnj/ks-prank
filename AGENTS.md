@@ -56,7 +56,7 @@ Current persisted fields are defined in `config/config.go`:
 
 Business data such as `site_id`, `ar_box_id`, live URLs, gift triggers, chat triggers, like triggers, and prank device SN comes from LuckPets server APIs after login. Do not reintroduce old local YAML-driven `gift_actions` logic unless the user explicitly asks for an offline mode.
 
-Note: `config.yaml.example` is older than the current app architecture and still contains local `ar_box_id`, `site_id`, `live_url`, and `gift_actions` examples. Treat it as historical/sample material unless you are specifically asked to refresh it.
+Note: `config.yaml.example` is only a minimal local-config sample. Business fields such as `ar_box_id`, `site_id`, `live_url`, and `gift_actions` should not be reintroduced there unless the user explicitly asks for an offline mode.
 
 ## Architecture
 

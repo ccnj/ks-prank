@@ -12,7 +12,7 @@ BUILD_DIR="$PROJECT_ROOT/build"
 BIN_DIR="$BUILD_DIR/bin"
 
 echo "========================================="
-echo "  ks-prank 双平台打包"
+echo "  萌物·直播整蛊助手双平台打包"
 echo "========================================="
 
 # ---- 1. macOS ----

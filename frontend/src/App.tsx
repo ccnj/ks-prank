@@ -80,7 +80,7 @@ function App() {
       if (!pick && enabledAccounts.length > 0) pick = enabledAccounts[0].id;
       if (pick) setAccountId(pick);
     } catch (err: any) {
-      message.error("加载 profile 失败: " + (err?.message || err));
+      message.error("加载账号资料失败: " + (err?.message || err));
       setLoggedIn(false);
       setProfile(null);
     } finally {

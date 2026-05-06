@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 交叉编译 ks-prank 为 Windows 可执行文件
+# 交叉编译直播整蛊助手为 Windows 可执行文件
 
 set -e
 
@@ -20,7 +20,7 @@ GOOS=windows
 GOARCH=amd64
 
 echo "========================================="
-echo "  编译 $APP_NAME (Windows amd64)"
+echo "  编译直播整蛊助手 (Windows amd64)"
 echo "========================================="
 
 # 交叉编译（CGO_ENABLED=0 纯静态编译，避免交叉编译时的 C 依赖问题）

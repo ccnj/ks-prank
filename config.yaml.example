@@ -1,87 +1,14 @@
-# 服务端配置（MQTT 凭证从服务端动态获取，无需配置）
+# 本地配置示例
+#
+# 当前应用的业务配置来自 LuckPets 管理后台：
+# - 场地、AR 盒子、直播账号、整蛊设备
+# - 礼物/弹幕/点赞触发规则
+# - MQTT 凭证
+#
+# 本地只持久化少量登录和偏好字段。程序会把实际配置写到：
+# - macOS: ~/Library/Application Support/ks-prank/config-ks.yaml
+# - Windows: %APPDATA%/ks-prank/config-ks.yaml
+
 server_url: "https://mwapi.ybkc.cc"
-
-# 业务配置
-ar_box_id: ""   # PERSON Box ID，需从数据库获取
-site_id: ""     # 场地 ID
-
-# 快手连接
-# 方式1（推荐）：填 live_url，程序自动通过 Chrome 抓取 token 和 wss 地址
-live_url: "https://live.kuaishou.com/u/xxx"
-# 方式2：手动从浏览器开发者工具 Network 搜 websocketinfo，复制 token 和 liveStreamId
-wss_url: "wss://livejs-ws-group5.gifshow.com/websocket"
-token: ""
-live_stream_id: ""
-
-# 礼物触发
-gift_actions:
-  # 玫瑰(1快币) → 10发1级攻击
-  - gift_name: "盛典票"
-    action: "attack_monster_360"
-    worker_group: 0
-    params:
-      shoot_cnt: 10
-      hit_level: 1
-      importance: 0
-
-  # 啤酒(10快币) → 20发3级攻击
-  - gift_name: "玫瑰"
-    action: "attack_monster_360"
-    worker_group: 0
-    params:
-      shoot_cnt: 10
-      hit_level: 3
-      importance: 1
-
-  # 跑车(666快币) → 回血
-  - gift_name: "小可爱"
-    action: "heal_monster"
-    worker_group: 1
-    params:
-      importance: 1
-
-  # 炸弹(1快币) → 丢蟑螂
-  - gift_name: "炸弹"
-    action: "throw_cockroach"
-    worker_group: 2
-    params:
-      importance: 0
-
-# 弹幕随机玩法
-chat_action:
-  enabled: true
-  trigger: "666"
-  actions:
-    # 50% 概率：5发1级攻击
-    - action: "attack_monster_360"
-      weight: 50
-      worker_group: 0
-      params:
-        shoot_cnt: 10
-        hit_level: 1
-        importance: 0
-
-    # 30% 概率：10发1级攻击
-    - action: "attack_monster_360"
-      weight: 20
-      worker_group: 0
-      params:
-        shoot_cnt: 10
-        hit_level: 2
-        importance: 0
-
-    # 3% 概率：20发3级攻击（风之极-陨杀）
-    - action: "attack_monster_360"
-      weight: 10
-      worker_group: 0
-      params:
-        shoot_cnt: 20
-        hit_level: 3
-        importance: 1
-
-    # 17% 概率：回血
-    - action: "heal_monster"
-      weight: 17
-      worker_group: 1
-      params:
-        importance: 0
+auth_token: ""
+last_account_id: ""

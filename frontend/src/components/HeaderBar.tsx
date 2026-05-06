@@ -36,7 +36,7 @@ export function HeaderBar({
   const userMenuItems = [
     {
       key: "refresh",
-      label: "刷新 profile",
+      label: "刷新账号资料",
       icon: <ReloadOutlined />,
       onClick: onRefresh,
     },

@@ -18,7 +18,7 @@ export const PLATFORM_COLOR: Record<string, string> = {
 export const STATUS_TEXT: Record<string, string> = {
   disconnected: "未连接",
   connecting: "连接 MQTT...",
-  fetching_token: "获取直播间 Token...",
+  fetching_token: "获取直播连接信息...",
   connected: "已连接",
 };
 

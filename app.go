@@ -205,7 +205,7 @@ func (a *App) Logout() error {
 	return nil
 }
 
-// GetProfile 主动刷新 profile（登录后调用）
+// GetProfile 主动刷新账号资料（登录后调用）
 func (a *App) GetProfile() (*mytypes.Profile, error) {
 	if a.cfg.AuthToken == "" {
 		return nil, fmt.Errorf("未登录")
@@ -227,7 +227,7 @@ func (a *App) GetLastAccountId() string {
 // 仅依赖已加载的 profile，无需先连接直播间。
 func (a *App) GetPrankRules(liveAccountId string) (*mytypes.PrankConfigData, error) {
 	if a.profile == nil {
-		return nil, fmt.Errorf("请先加载 profile")
+		return nil, fmt.Errorf("请先加载账号资料")
 	}
 	if a.profile.Site == nil {
 		return nil, fmt.Errorf("当前账号未绑定场地")
@@ -263,7 +263,7 @@ func (a *App) Connect(liveAccountId string) error {
 	}
 	if a.profile == nil {
 		a.mu.Unlock()
-		return fmt.Errorf("请先加载 profile")
+		return fmt.Errorf("请先加载账号资料")
 	}
 	if a.profile.Site == nil {
 		a.mu.Unlock()
