@@ -41,8 +41,10 @@ type liveRoomGiftPayload struct {
 }
 
 const (
-	addKsGiftLogPath = "/api/v1/fight/low_security/add_ks_gift_log"
-	addDyGiftLogPath = "/api/v1/fight/low_security/add_dy_gift_log"
+	addLiveGiftLogPath = "/api/v1/fight/low_security/add_live_gift_log"
+
+	PlatformKs = "ks"
+	PlatformDy = "dy"
 )
 
 type addGiftLogResponse struct {
@@ -50,39 +52,45 @@ type addGiftLogResponse struct {
 	ErrMsg  string `json:"errMsg"`
 }
 
-func ReportKsGiftLog(ksUid, giftName string, count, giftValue int, rawInfo interface{}) {
-	reportGiftLog(addKsGiftLogPath, "ks_uid", ksUid, giftName, count, giftValue, rawInfo, "快手")
-}
-
-func ReportDyGiftLog(dyUid, giftName string, count, giftValue int, rawInfo interface{}) {
-	reportGiftLog(addDyGiftLogPath, "dy_uid", dyUid, giftName, count, giftValue, rawInfo, "抖音")
-}
-
-func reportGiftLog(path, uidKey, uid, giftName string, count, giftValue int, rawInfo interface{}, label string) {
+// ReportLiveGiftLog 上报直播间礼物日志（合并 ks/dy）。
+// platform 取值 PlatformKs / PlatformDy；platformUid 为送礼用户在该平台的 UID。
+// anchor_uid / site_id / live_url 从 glb.Runtime 读取。
+func ReportLiveGiftLog(platform, platformUid, giftName string, count, giftValue int, rawInfo interface{}) {
 	if glb.HttpClient == nil {
 		return
 	}
 
+	rt := glb.Runtime
+	if rt == nil {
+		fmt.Printf("记录直播间礼物日志失败: runtime 未就绪\n")
+		return
+	}
+
 	reqBody := map[string]interface{}{
-		uidKey:       uid,
-		"gift_name":  giftName,
-		"count":      count,
-		"gift_value": giftValue,
-		"raw_info":   rawInfo,
-		"sec_key":    lowSecurityKey,
+		"anchor_uid":   rt.UserId,
+		"site_id":      rt.SiteId,
+		"live_url":     rt.LiveUrl,
+		"platform":     platform,
+		"platform_uid": platformUid,
+		"gift_name":    giftName,
+		"count":        count,
+		"gift_value":   giftValue,
+		"raw_info":     rawInfo,
+		"sec_key":      lowSecurityKey,
 	}
 
 	var rsp addGiftLogResponse
 	resp, err := glb.HttpClient.R().
 		SetBody(reqBody).
 		SetResult(&rsp).
-		Post(path)
+		Post(addLiveGiftLogPath)
 	if err != nil {
-		fmt.Printf("记录%s礼物日志失败: %v\n", label, err)
+		fmt.Printf("记录直播间礼物日志失败(%s): %v\n", platform, err)
 		return
 	}
 	if !resp.IsSuccess() || rsp.ErrCode != 0 {
-		fmt.Printf("记录%s礼物日志失败: status=%d errCode=%d errMsg=%s\n", label, resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
+		fmt.Printf("记录直播间礼物日志失败(%s): status=%d errCode=%d errMsg=%s\n",
+			platform, resp.StatusCode(), rsp.ErrCode, rsp.ErrMsg)
 	}
 }
 

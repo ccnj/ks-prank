@@ -297,7 +297,7 @@ func (kc *KuaishouClient) handleFeedPush(feed *pb.SCWebFeedPush) {
 
 		giftPrice := consts.GetGiftPrice(giftID)
 		log.Printf("[礼物] %s 送出 %s (%d快币) x%d", userName, giftName, giftPrice, count)
-		go handler.ReportKsGiftLog(ksUid, giftName, count, giftPrice, gift)
+		go handler.ReportLiveGiftLog(handler.PlatformKs, ksUid, giftName, count, giftPrice, gift)
 
 		kc.emitEvent(EventGift, GiftEventData{
 			Username: userName,

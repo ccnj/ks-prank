@@ -198,7 +198,7 @@ func (kc *DouyinPrankClient) handleGift(user *pb.User, giftInfo *pb.GiftMessage)
 	dyUid := getDyUID(user)
 
 	log.Printf("[抖音礼物] %s 送出 %s x%d (%d钻)", userName, giftName, count, giftValue)
-	go handler.ReportDyGiftLog(dyUid, giftName, count, giftValue, giftInfo)
+	go handler.ReportLiveGiftLog(handler.PlatformDy, dyUid, giftName, count, giftValue, giftInfo)
 
 	kc.emitEvent(EventGift, GiftEventData{
 		Username: userName,
