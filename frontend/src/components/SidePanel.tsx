@@ -12,6 +12,7 @@ import {
 const { Text } = Typography;
 
 const PRANK_CONFIG_URL = "https://adm.ybkc.cc/ar/prank-configs";
+const LIVE_ACCOUNTS_URL = "https://adm.ybkc.cc/site/live-accounts";
 
 interface SidePanelProps {
   profile: types.Profile | null;
@@ -105,13 +106,22 @@ export function SidePanel({
           title="直播账号"
           style={{ marginBottom: 12 }}
           extra={
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={onRefreshProfile}
-              loading={profileLoading}
-            />
+            <Space size={0}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={onRefreshProfile}
+                loading={profileLoading}
+              />
+              <Button
+                size="small"
+                type="text"
+                icon={<EditOutlined />}
+                onClick={() => BrowserOpenURL(LIVE_ACCOUNTS_URL)}
+                title="去管理后台编辑"
+              />
+            </Space>
           }
         >
           {accounts.length === 0 ? (
