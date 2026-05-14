@@ -18,6 +18,7 @@ import { CheckCarStream, PlayCarStream } from "../../wailsjs/go/main/App";
 import type { types } from "../../wailsjs/go/models";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import {
+  type LogLevel,
   PLATFORM_COLOR,
   PLATFORM_LABEL,
   type PrankRules,
@@ -39,6 +40,7 @@ interface SidePanelProps {
   rulesLoading: boolean;
   onRefreshProfile: () => void;
   onRefreshRules: () => void;
+  onLog?: (level: LogLevel, message: string, detail?: string) => void;
 }
 
 export function SidePanel({
@@ -51,6 +53,7 @@ export function SidePanel({
   rulesLoading,
   onRefreshProfile,
   onRefreshRules,
+  onLog,
 }: SidePanelProps) {
   const site = profile?.site;
   const accounts = (profile?.live_accounts || []).filter((a) => a.enabled);
@@ -79,13 +82,15 @@ export function SidePanel({
       if (seq !== probeSeqRef.current) return;
       setCarOnline("online");
       setCarOnlineErr("");
+      onLog?.("info", `整蛊设备在线 (${prankDeviceIp}:554)`);
     } catch (e: any) {
       if (seq !== probeSeqRef.current) return;
       const msg = String(e?.message || e || "未知错误");
       setCarOnline("offline");
       setCarOnlineErr(msg);
+      onLog?.("warn", `整蛊设备离线 (${prankDeviceIp}:554)`, msg);
     }
-  }, [prankDeviceIp]);
+  }, [prankDeviceIp, onLog]);
 
   useEffect(() => {
     probeCarOnline();
@@ -109,12 +114,14 @@ export function SidePanel({
     try {
       await PlayCarStream(prankDeviceIp);
       message.success("已打开整蛊设备视频窗口");
+      onLog?.("info", `已打开直播画面 (rtsp://${prankDeviceIp}/live/0)`);
     } catch (e: any) {
       const raw = e?.message || String(e);
       message.error({
         content: `无法启动播放器: ${raw}(请确认本机已安装 ffplay 并加入 PATH)`,
         duration: 8,
       });
+      onLog?.("error", "无法启动播放器(请确认 ffplay 已安装并加入 PATH)", raw);
     }
   };
 

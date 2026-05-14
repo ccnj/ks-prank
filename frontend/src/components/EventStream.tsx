@@ -2,12 +2,11 @@ import {
   DownOutlined,
   GiftOutlined,
   MessageOutlined,
-  ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Avatar, Button, Card, Segmented, Space, Tag } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type EventItem, STATUS_TEXT } from "../types";
+import { type EventItem } from "../types";
 
 interface EventStreamProps {
   events: EventItem[];
@@ -96,38 +95,8 @@ function EventRow({ item }: { item: EventItem }) {
     );
   }
 
-  if (item.type === "status") {
-    return (
-      <div
-        style={{
-          padding: "4px 10px",
-          marginBottom: 4,
-          fontSize: 12,
-          color: "#666",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-      >
-        <ThunderboltOutlined style={{ color: "#722ed1" }} />
-        <span style={{ color: "#999" }}>{time}</span>
-        <span>状态：{STATUS_TEXT[item.data] || item.data}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        padding: "4px 10px",
-        marginBottom: 4,
-        fontSize: 12,
-        color: "#999",
-      }}
-    >
-      <span>{time}</span> · {JSON.stringify(item.data)}
-    </div>
-  );
+  // status / log 由系统日志面板渲染,事件流忽略
+  return null;
 }
 
 export function EventStream({ events, onClear }: EventStreamProps) {
@@ -139,8 +108,11 @@ export function EventStream({ events, onClear }: EventStreamProps) {
   const prevLenRef = useRef(events.length);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return events;
-    return events.filter((e) => e.type === filter);
+    const liveOnly = events.filter(
+      (e) => e.type === "gift" || e.type === "comment",
+    );
+    if (filter === "all") return liveOnly;
+    return liveOnly.filter((e) => e.type === filter);
   }, [events, filter]);
 
   const stats = useMemo(() => {
@@ -173,15 +145,15 @@ export function EventStream({ events, onClear }: EventStreamProps) {
   };
 
   useEffect(() => {
-    const delta = events.length - prevLenRef.current;
-    prevLenRef.current = events.length;
+    const delta = filtered.length - prevLenRef.current;
+    prevLenRef.current = filtered.length;
     if (delta <= 0) return;
     if (atBottom) {
       scrollToBottom(true);
     } else {
       setUnreadCount((n) => n + delta);
     }
-  }, [events.length, atBottom]);
+  }, [filtered.length, atBottom]);
 
   return (
     <Card

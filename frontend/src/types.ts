@@ -1,9 +1,23 @@
+export type LogLevel = "info" | "warn" | "error";
+
+export interface LogPayload {
+  level: LogLevel;
+  message: string;
+  detail?: string;
+}
+
 export interface EventItem {
   id: number;
   type: "gift" | "comment" | "action" | "status" | "log";
   timestamp: number;
   data: any;
 }
+
+// 哪些条目应该归入系统日志面板(排除直播间互动事件)
+export const SYSTEM_LOG_TYPES: ReadonlySet<EventItem["type"]> = new Set([
+  "log",
+  "status",
+]);
 
 export const PLATFORM_LABEL: Record<string, string> = {
   kuaishou: "快手",

@@ -164,6 +164,19 @@ func (a *App) persistConfig() {
 	}
 }
 
+// emitLog 推送一条系统日志事件给前端的"系统日志"面板。
+// level 取 info/warn/error;detail 为可选的技术细节(如原始 err 串)。
+func (a *App) emitLog(level, message, detail string) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, "event:log", map[string]string{
+		"level":   level,
+		"message": message,
+		"detail":  detail,
+	})
+}
+
 // ===== 认证 =====
 
 // LoginState 返回给前端用于判断登录态
@@ -324,9 +337,11 @@ func (a *App) Connect(liveAccountId string) error {
 	// 拉取服务端整蛊配置
 	prank, err := service.GetPrankConfig(siteId, account.Platform)
 	if err != nil {
+		a.emitLog("error", "拉取整蛊配置失败", err.Error())
 		a.failConnect(token)
 		return fmt.Errorf("获取整蛊配置失败: %w", err)
 	}
+	a.emitLog("info", fmt.Sprintf("整蛊配置已加载 (平台=%s)", account.Platform), "")
 	if err := checkCanceled(); err != nil {
 		a.failConnect(token)
 		return err
@@ -353,6 +368,7 @@ func (a *App) Connect(liveAccountId string) error {
 
 	mqttCfg, err := initialize.FetchMqttConfig()
 	if err != nil {
+		a.emitLog("error", "获取 MQTT 配置失败", err.Error())
 		a.failConnect(token)
 		return fmt.Errorf("获取 MQTT 配置失败: %w", err)
 	}
@@ -361,9 +377,11 @@ func (a *App) Connect(liveAccountId string) error {
 		return err
 	}
 	if err := initialize.InitMqtt(mqttCfg); err != nil {
+		a.emitLog("error", "MQTT 连接失败", err.Error())
 		a.failConnect(token)
 		return fmt.Errorf("MQTT 连接失败: %w", err)
 	}
+	a.emitLog("info", "MQTT 已连接", "")
 	if err := checkCanceled(); err != nil {
 		a.failConnect(token)
 		return err
@@ -379,11 +397,14 @@ func (a *App) Connect(liveAccountId string) error {
 		}
 		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
+		a.emitLog("info", "正在抓取快手直播间 WSS token", "")
 		info, ferr := initialize.FetchWssInfoContext(connCtx, account.LiveUrl, 120*time.Second)
 		if ferr != nil {
+			a.emitLog("error", "抓取快手 WSS token 失败", ferr.Error())
 			a.failConnect(token)
 			return fmt.Errorf("获取 WSS token 失败: %w", ferr)
 		}
+		a.emitLog("info", "快手 WSS token 已获取", "")
 		if err := checkCanceled(); err != nil {
 			a.failConnect(token)
 			return err
@@ -394,6 +415,7 @@ func (a *App) Connect(liveAccountId string) error {
 			wssURL = "wss://livejs-ws-group5.gifshow.com/websocket"
 		}
 		if err := ksClient.Connect(wssURL, info.Token, info.LiveStreamId); err != nil {
+			a.emitLog("error", "快手直播间连接失败", err.Error())
 			a.failConnect(token)
 			return err
 		}
@@ -406,18 +428,22 @@ func (a *App) Connect(liveAccountId string) error {
 		}
 		a.mu.Unlock()
 		runtime.EventsEmit(a.ctx, "event:status", "fetching_token")
+		a.emitLog("info", "正在抓取抖音直播间 WSS URL(若浏览器要求登录请扫码)", "")
 		// 5 分钟预算：覆盖用户在新 Chrome 里扫码登录抖音的时间
 		info, ferr := initialize.FetchDouyinWssUrlContext(connCtx, account.LiveUrl, 5*time.Minute)
 		if ferr != nil {
+			a.emitLog("error", "抓取抖音 WSS URL 失败", ferr.Error())
 			a.failConnect(token)
 			return fmt.Errorf("获取抖音 WSS URL 失败: %w", ferr)
 		}
+		a.emitLog("info", "抖音 WSS URL 已获取", "")
 		if err := checkCanceled(); err != nil {
 			a.failConnect(token)
 			return err
 		}
 		dyClient, derr := service.NewDouyinPrankClient(info.WssUrl, info.Cookies, prank, eventCb)
 		if derr != nil {
+			a.emitLog("error", "抖音直播间连接失败", derr.Error())
 			a.failConnect(token)
 			return fmt.Errorf("抖音连接失败: %w", derr)
 		}
@@ -445,6 +471,7 @@ func (a *App) Connect(liveAccountId string) error {
 		if a.clearFinishedClient(client) {
 			initialize.CloseMqtt()
 			glb.Runtime = nil
+			a.emitLog("warn", "直播间连接已结束", "")
 			runtime.EventsEmit(a.ctx, "event:status", "disconnected")
 		}
 	}()
