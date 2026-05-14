@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ import (
 	glb "ks-prank/internal/global"
 	"ks-prank/internal/initialize"
 	"ks-prank/internal/service"
+	"ks-prank/internal/stream"
 	mytypes "ks-prank/internal/types"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -38,6 +38,7 @@ type App struct {
 	cfg           *config.Config
 	profile       *mytypes.Profile
 	status        string // disconnected / connecting / connected / fetching_token
+	carStream     *stream.Session
 }
 
 func NewApp() *App {
@@ -68,9 +69,11 @@ func (a *App) OnShutdown(ctx context.Context) {
 	a.mu.Lock()
 	cancel := a.connectCancel
 	client := a.client
+	carStream := a.carStream
 	a.connectCancel = nil
 	a.connectToken = nil
 	a.client = nil
+	a.carStream = nil
 	a.status = "disconnected"
 	a.mu.Unlock()
 
@@ -79,6 +82,9 @@ func (a *App) OnShutdown(ctx context.Context) {
 	}
 	if client != nil {
 		client.Close()
+	}
+	if carStream != nil {
+		carStream.Close()
 	}
 	initialize.CloseMqtt()
 	glb.Runtime = nil
@@ -501,26 +507,53 @@ func (a *App) CheckCarStream(ip string) error {
 	return nil
 }
 
-// PlayCarStream 用本机 ffplay 拉取整蛊车的 RTSP 视频流(同局域网直连)。
-// 要求 ffplay 在 PATH 中。
-func (a *App) PlayCarStream(ip string) error {
-	if net.ParseIP(ip) == nil {
-		return fmt.Errorf("无效的 IP: %q", ip)
+// StartCarStream 用整蛊车 LAN IP 拉 RTSP, 在本机起一个 PeerConnection,
+// 与 WebView 内的浏览器 PC 完成 SDP 交换,把 H.264 (和可选 G.711) RTP 透传过去。
+// 重复调用会先关掉已有 session。返回 answer SDP 给前端。
+func (a *App) StartCarStream(ip, offerSDP string) (string, error) {
+	a.mu.Lock()
+	old := a.carStream
+	a.carStream = nil
+	a.mu.Unlock()
+	if old != nil {
+		old.Close()
 	}
-	rtspURL := fmt.Sprintf("rtsp://%s/live/0", ip)
-	cmd := exec.Command(
-		"ffplay",
-		"-rtsp_transport", "tcp",
-		"-fflags", "nobuffer",
-		"-flags", "low_delay",
-		rtspURL,
-	)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动 ffplay 失败(请确认已安装并加入 PATH): %w", err)
+
+	sess, answer, err := stream.Start(a.ctx, ip, offerSDP)
+	if err != nil {
+		a.emitLog("error", "启动整蛊设备视频流失败", err.Error())
+		return "", err
 	}
+
+	a.mu.Lock()
+	a.carStream = sess
+	a.mu.Unlock()
+	a.emitLog("info", fmt.Sprintf("已建立整蛊设备视频流 (%s)", ip), "")
+
 	go func() {
-		_ = cmd.Wait()
+		<-sess.Closed()
+		a.mu.Lock()
+		matched := a.carStream == sess
+		if matched {
+			a.carStream = nil
+		}
+		a.mu.Unlock()
+		if matched {
+			a.emitLog("info", "整蛊设备视频流已结束", "")
+		}
 	}()
-	log.Printf("[PlayCarStream] 已启动 ffplay pid=%d url=%s", cmd.Process.Pid, rtspURL)
-	return nil
+
+	return answer, nil
+}
+
+// StopCarStream 主动关闭当前的整蛊车视频会话。前端关闭 Modal 时调用。
+func (a *App) StopCarStream() {
+	a.mu.Lock()
+	sess := a.carStream
+	a.carStream = nil
+	a.mu.Unlock()
+	if sess != nil {
+		sess.Close()
+		a.emitLog("info", "整蛊设备视频流已主动停止", "")
+	}
 }

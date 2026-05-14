@@ -5,7 +5,6 @@ import {
   Card,
   Empty,
   Form,
-  message,
   Select,
   Space,
   Spin,
@@ -14,7 +13,7 @@ import {
   Typography,
 } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCarStream, PlayCarStream } from "../../wailsjs/go/main/App";
+import { CheckCarStream } from "../../wailsjs/go/main/App";
 import type { types } from "../../wailsjs/go/models";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import {
@@ -24,6 +23,7 @@ import {
   type PrankRules,
   joinChoiceLabels,
 } from "../types";
+import { CarStreamPlayer } from "./CarStreamPlayer";
 
 const { Text } = Typography;
 
@@ -66,6 +66,7 @@ export function SidePanel({
   type CarOnline = "unknown" | "checking" | "online" | "offline";
   const [carOnline, setCarOnline] = useState<CarOnline>("unknown");
   const [carOnlineErr, setCarOnlineErr] = useState<string>("");
+  const [streamOpen, setStreamOpen] = useState(false);
   const probeSeqRef = useRef(0);
 
   const probeCarOnline = useCallback(async () => {
@@ -109,26 +110,22 @@ export function SidePanel({
           ? offlineFriendlyMsg
           : "尚未检测整蛊设备";
 
-  const handlePlayCarStream = async () => {
+  const handlePlayCarStream = () => {
     if (!prankDeviceIp) return;
-    try {
-      await PlayCarStream(prankDeviceIp);
-      message.success("已打开整蛊设备视频窗口");
-      onLog?.("info", `已打开直播画面 (rtsp://${prankDeviceIp}/live/0)`);
-    } catch (e: any) {
-      const raw = e?.message || String(e);
-      message.error({
-        content: `无法启动播放器: ${raw}(请确认本机已安装 ffplay 并加入 PATH)`,
-        duration: 8,
-      });
-      onLog?.("error", "无法启动播放器(请确认 ffplay 已安装并加入 PATH)", raw);
-    }
+    setStreamOpen(true);
+    onLog?.("info", `打开整蛊设备视频窗口 (${prankDeviceIp})`);
   };
 
   const giftTriggers = rules?.gift_triggers || [];
 
   return (
     <div style={{ width: 360, flexShrink: 0, overflowY: "auto" }}>
+      <CarStreamPlayer
+        ip={prankDeviceIp}
+        open={streamOpen}
+        onClose={() => setStreamOpen(false)}
+        onLog={onLog}
+      />
       <Spin spinning={profileLoading}>
         <Card
           size="small"
