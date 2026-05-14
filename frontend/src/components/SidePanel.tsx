@@ -1,6 +1,20 @@
 import { EditOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Form, message, Select, Space, Spin, Tag, Typography } from "antd";
-import { PlayCarStream } from "../../wailsjs/go/main/App";
+import {
+  Badge,
+  Button,
+  Card,
+  Empty,
+  Form,
+  message,
+  Select,
+  Space,
+  Spin,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCarStream, PlayCarStream } from "../../wailsjs/go/main/App";
 import type { types } from "../../wailsjs/go/models";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import {
@@ -46,13 +60,61 @@ export function SidePanel({
   const prankDeviceSn = profile?.prank_device_sn || "";
   const prankDeviceIp = profile?.prank_device_last_wlan_ip || "";
 
+  type CarOnline = "unknown" | "checking" | "online" | "offline";
+  const [carOnline, setCarOnline] = useState<CarOnline>("unknown");
+  const [carOnlineErr, setCarOnlineErr] = useState<string>("");
+  const probeSeqRef = useRef(0);
+
+  const probeCarOnline = useCallback(async () => {
+    const seq = ++probeSeqRef.current;
+    if (!prankDeviceIp) {
+      setCarOnline("unknown");
+      setCarOnlineErr("");
+      return;
+    }
+    setCarOnline("checking");
+    setCarOnlineErr("");
+    try {
+      await CheckCarStream(prankDeviceIp);
+      if (seq !== probeSeqRef.current) return;
+      setCarOnline("online");
+      setCarOnlineErr("");
+    } catch (e: any) {
+      if (seq !== probeSeqRef.current) return;
+      const msg = String(e?.message || e || "未知错误");
+      setCarOnline("offline");
+      setCarOnlineErr(msg);
+    }
+  }, [prankDeviceIp]);
+
+  useEffect(() => {
+    probeCarOnline();
+  }, [probeCarOnline]);
+
+  const offlineFriendlyMsg =
+    "获取视频连接失败,请确保整蛊设备在线或尝试重启设备";
+  const playDisabled = !prankDeviceIp || carOnline !== "online";
+  const playTooltip = !prankDeviceIp
+    ? "整蛊设备还没上报局域网地址,暂时无法播放"
+    : carOnline === "online"
+      ? "打开整蛊设备视频(同局域网直拉 RTSP)"
+      : carOnline === "checking"
+        ? "正在检测整蛊设备..."
+        : carOnline === "offline"
+          ? offlineFriendlyMsg
+          : "尚未检测整蛊设备";
+
   const handlePlayCarStream = async () => {
     if (!prankDeviceIp) return;
     try {
       await PlayCarStream(prankDeviceIp);
-      message.success(`已用 ffplay 播放 rtsp://${prankDeviceIp}/live/0`);
+      message.success("已打开整蛊设备视频窗口");
     } catch (e: any) {
-      message.error(`播放失败:${e?.message || e}`);
+      const raw = e?.message || String(e);
+      message.error({
+        content: `无法启动播放器: ${raw}(请确认本机已安装 ffplay 并加入 PATH)`,
+        duration: 8,
+      });
     }
   };
 
@@ -94,33 +156,100 @@ export function SidePanel({
               <div>
                 <Text type="secondary">整蛊设备：</Text>
                 {prankDeviceSn ? (
-                  <Space size={4} wrap>
-                    <Tag
-                      color="orange"
-                      style={{ fontFamily: "monospace", margin: 0 }}
-                    >
-                      {prankDeviceSn}
-                    </Tag>
-                    {prankDeviceIp && (
-                      <Tag style={{ fontFamily: "monospace", margin: 0 }}>
-                        {prankDeviceIp}
+                  <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                    <Space size={4} wrap>
+                      <Tag
+                        color="orange"
+                        style={{ fontFamily: "monospace", margin: 0 }}
+                      >
+                        {prankDeviceSn}
                       </Tag>
+                      {prankDeviceIp ? (
+                        <Tag style={{ fontFamily: "monospace", margin: 0 }}>
+                          {prankDeviceIp}
+                        </Tag>
+                      ) : (
+                        <Tooltip title="整蛊设备还没上报局域网地址,可能未连接 WiFi 或尚未注册">
+                          <Tag color="default" style={{ margin: 0 }}>
+                            无 IP
+                          </Tag>
+                        </Tooltip>
+                      )}
+                      <Tooltip
+                        title={
+                          !prankDeviceIp
+                            ? "整蛊设备未上报 IP,无法检测"
+                            : carOnline === "online"
+                              ? "整蛊设备在线,可以播放视频"
+                              : carOnline === "checking"
+                                ? "正在检测整蛊设备..."
+                                : carOnline === "offline"
+                                  ? offlineFriendlyMsg
+                                  : "尚未检测整蛊设备"
+                        }
+                      >
+                        <Badge
+                          status={
+                            !prankDeviceIp
+                              ? "default"
+                              : carOnline === "online"
+                                ? "success"
+                                : carOnline === "checking"
+                                  ? "processing"
+                                  : carOnline === "offline"
+                                    ? "error"
+                                    : "default"
+                          }
+                        />
+                      </Tooltip>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<ReloadOutlined />}
+                        onClick={probeCarOnline}
+                        disabled={!prankDeviceIp || carOnline === "checking"}
+                        loading={carOnline === "checking"}
+                        title="重新检测整蛊设备"
+                        style={{ padding: "0 4px" }}
+                      />
+                      <Tooltip title={playTooltip}>
+                        <span>
+                          <Button
+                            size="small"
+                            type="link"
+                            icon={<PlayCircleOutlined />}
+                            onClick={handlePlayCarStream}
+                            disabled={playDisabled}
+                            style={{ padding: 0 }}
+                          >
+                            打开直播画面
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </Space>
+                    {carOnline === "offline" && (
+                      <div style={{ lineHeight: 1.4 }}>
+                        <Text
+                          type="danger"
+                          style={{ fontSize: 12, fontWeight: 500 }}
+                        >
+                          {offlineFriendlyMsg}
+                        </Text>
+                        {carOnlineErr && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "#999",
+                              wordBreak: "break-all",
+                              whiteSpace: "pre-wrap",
+                              marginTop: 2,
+                            }}
+                          >
+                            技术细节:{carOnlineErr}
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <Button
-                      size="small"
-                      type="link"
-                      icon={<PlayCircleOutlined />}
-                      onClick={handlePlayCarStream}
-                      disabled={!prankDeviceIp}
-                      title={
-                        prankDeviceIp
-                          ? `ffplay rtsp://${prankDeviceIp}/live/0`
-                          : "整蛊车未上报局域网 IP"
-                      }
-                      style={{ padding: 0 }}
-                    >
-                      播放视频
-                    </Button>
                   </Space>
                 ) : (
                   <Tag color="default">未配置（pet_feed/pet_tease 触发会跳过）</Tag>

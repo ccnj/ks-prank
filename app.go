@@ -459,6 +459,21 @@ func (a *App) Disconnect() error {
 	return nil
 }
 
+// CheckCarStream 探活整蛊车的 RTSP 端口(554)。
+// 用于"播放视频"按钮之前的可达性检测,失败错误信息透传给前端展示。
+func (a *App) CheckCarStream(ip string) error {
+	if net.ParseIP(ip) == nil {
+		return fmt.Errorf("无效的 IP: %q", ip)
+	}
+	addr := net.JoinHostPort(ip, "554")
+	conn, err := net.DialTimeout("tcp", addr, 1500*time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("RTSP 端口 %s 不可达: %w", addr, err)
+	}
+	_ = conn.Close()
+	return nil
+}
+
 // PlayCarStream 用本机 ffplay 拉取整蛊车的 RTSP 视频流(同局域网直连)。
 // 要求 ffplay 在 PATH 中。
 func (a *App) PlayCarStream(ip string) error {
