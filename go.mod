@@ -9,7 +9,6 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/go-resty/resty/v2 v2.17.1
 	github.com/gorilla/websocket v1.5.3
-	github.com/pion/interceptor v0.1.29
 	github.com/pion/rtp v1.8.7
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/spf13/viper v1.19.0
@@ -48,6 +47,7 @@ require (
 	github.com/pion/datachannel v1.5.8 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/ice/v2 v2.3.38 // indirect
+	github.com/pion/interceptor v0.1.29 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/mdns v0.0.12 // indirect
 	github.com/pion/randutil v0.1.0 // indirect

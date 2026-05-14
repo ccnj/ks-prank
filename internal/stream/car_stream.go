@@ -6,6 +6,11 @@
 // 这样浏览器拿到的是符合 WebRTC 习惯的 RTP 流,不会被 FU-A 分片边界
 // 或半包卡住 jitter buffer。同时 IDR 帧若缺 SPS/PPS 会自动补上。
 //
+// 经过 A/B 验证: 这一步是消除卡顿的唯一必要条件。曾尝试过自定义
+// MediaEngine 把 SDP 的 profile-level-id 调成源流真实值, 实测对稳定性
+// 无帮助(浏览器 decoder 看的是流里的实际 SPS, 不是 SDP 声明),
+// 所以保持 pion 默认 MediaEngine, 不再自定义。
+//
 // 音频路径(G.711 A-law) 包结构简单,继续 RTP 透传。
 //
 // 信令(SDP offer/answer) 由调用方通过函数参数传递,
@@ -29,7 +34,6 @@ import (
 	"github.com/bluenviron/gortsplib/v4/pkg/description"
 	"github.com/bluenviron/gortsplib/v4/pkg/format"
 	"github.com/bluenviron/gortsplib/v4/pkg/format/rtph264"
-	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
@@ -131,62 +135,12 @@ func Start(ctx context.Context, ip, offerSDP string) (*Session, string, error) {
 		}
 	}
 
-	// 用源流真实的 H.264 profile-level-id 注册 codec,避免 pion 默认 42e01f
-	// 与车端实际 (可能是 Main / High) 不匹配导致浏览器解码"看似能播,几秒后崩"。
-	profileLevelID := extractH264ProfileLevelID(h264Format.SPS)
-	log.Printf("[stream] 检测到 H264 profile-level-id=%s (SPS=%d bytes)",
-		profileLevelID, len(h264Format.SPS))
+	// 诊断日志: 记下源流真实的 H.264 profile, 调试时方便对照浏览器协商的 SDP。
+	// 注意 SDP 里 pion 默认仍宣称 42e01f, 实测不影响解码,见包文档说明。
+	log.Printf("[stream] H.264 source profile-level-id=%s (SPS=%d bytes)",
+		extractH264ProfileLevelID(h264Format.SPS), len(h264Format.SPS))
 
-	me := &webrtc.MediaEngine{}
-	videoFmtp := fmt.Sprintf(
-		"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=%s",
-		profileLevelID,
-	)
-	videoFeedback := []webrtc.RTCPFeedback{
-		{Type: "goog-remb"},
-		{Type: "ccm", Parameter: "fir"},
-		{Type: "nack"},
-		{Type: "nack", Parameter: "pli"},
-	}
-	if err := me.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  videoFmtp,
-			RTCPFeedback: videoFeedback,
-		},
-		PayloadType: 96,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		rc.Close()
-		return nil, "", fmt.Errorf("注册视频 codec 失败: %w", err)
-	}
-	if g711Format != nil {
-		if err := me.RegisterCodec(webrtc.RTPCodecParameters{
-			RTPCodecCapability: webrtc.RTPCodecCapability{
-				MimeType:  webrtc.MimeTypePCMA,
-				ClockRate: 8000,
-				Channels:  1,
-			},
-			PayloadType: 8,
-		}, webrtc.RTPCodecTypeAudio); err != nil {
-			rc.Close()
-			return nil, "", fmt.Errorf("注册音频 codec 失败: %w", err)
-		}
-	}
-
-	ir := &interceptor.Registry{}
-	if err := webrtc.RegisterDefaultInterceptors(me, ir); err != nil {
-		rc.Close()
-		return nil, "", fmt.Errorf("注册默认 interceptor 失败: %w", err)
-	}
-
-	api := webrtc.NewAPI(
-		webrtc.WithMediaEngine(me),
-		webrtc.WithInterceptorRegistry(ir),
-	)
-
-	// 全本机连接,无需 STUN/TURN
-	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		rc.Close()
 		return nil, "", fmt.Errorf("创建 PeerConnection 失败: %w", err)
@@ -210,10 +164,8 @@ func Start(ctx context.Context, ip, offerSDP string) (*Session, string, error) {
 
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{
-			MimeType:     webrtc.MimeTypeH264,
-			ClockRate:    90000,
-			SDPFmtpLine:  videoFmtp,
-			RTCPFeedback: videoFeedback,
+			MimeType:  webrtc.MimeTypeH264,
+			ClockRate: 90000,
 		},
 		"video", "ks-prank-car",
 	)
@@ -383,12 +335,11 @@ func drainRTCP(sender *webrtc.RTPSender) {
 	}
 }
 
-// extractH264ProfileLevelID 从 SPS 抽 profile-level-id (6 hex chars):
+// extractH264ProfileLevelID 从 SPS 抽 profile-level-id (6 hex chars), 用于诊断日志:
 //
 //	SPS layout: [NAL header byte][profile_idc][constraint_flags][level_idc][...]
 //
-// 拿到的 3 字节按 RFC 6184 拼成 profile-level-id, 写进 SDP 的 fmtp 行,
-// 浏览器据此知道该按哪个 profile 调用解码器。SPS 异常时回退到
+// 拿到的 3 字节按 RFC 6184 拼成 profile-level-id。SPS 异常时回退到
 // constrained baseline 3.1 (42e01f), 与 pion 默认值一致。
 func extractH264ProfileLevelID(sps []byte) string {
 	if len(sps) < 4 {
