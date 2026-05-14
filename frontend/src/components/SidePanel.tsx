@@ -1,5 +1,6 @@
-import { EditOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Empty, Form, Select, Space, Spin, Tag, Typography } from "antd";
+import { EditOutlined, PlayCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Empty, Form, message, Select, Space, Spin, Tag, Typography } from "antd";
+import { PlayCarStream } from "../../wailsjs/go/main/App";
 import type { types } from "../../wailsjs/go/models";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import {
@@ -43,6 +44,17 @@ export function SidePanel({
   const monsterBox = arBoxes.find((b) => b.type === "MONSTER");
   const currentAccount = accounts.find((a) => a.id === accountId);
   const prankDeviceSn = profile?.prank_device_sn || "";
+  const prankDeviceIp = profile?.prank_device_last_wlan_ip || "";
+
+  const handlePlayCarStream = async () => {
+    if (!prankDeviceIp) return;
+    try {
+      await PlayCarStream(prankDeviceIp);
+      message.success(`已用 ffplay 播放 rtsp://${prankDeviceIp}/live/0`);
+    } catch (e: any) {
+      message.error(`播放失败:${e?.message || e}`);
+    }
+  };
 
   const giftTriggers = rules?.gift_triggers || [];
 
@@ -82,12 +94,34 @@ export function SidePanel({
               <div>
                 <Text type="secondary">整蛊设备：</Text>
                 {prankDeviceSn ? (
-                  <Tag
-                    color="orange"
-                    style={{ fontFamily: "monospace" }}
-                  >
-                    {prankDeviceSn}
-                  </Tag>
+                  <Space size={4} wrap>
+                    <Tag
+                      color="orange"
+                      style={{ fontFamily: "monospace", margin: 0 }}
+                    >
+                      {prankDeviceSn}
+                    </Tag>
+                    {prankDeviceIp && (
+                      <Tag style={{ fontFamily: "monospace", margin: 0 }}>
+                        {prankDeviceIp}
+                      </Tag>
+                    )}
+                    <Button
+                      size="small"
+                      type="link"
+                      icon={<PlayCircleOutlined />}
+                      onClick={handlePlayCarStream}
+                      disabled={!prankDeviceIp}
+                      title={
+                        prankDeviceIp
+                          ? `ffplay rtsp://${prankDeviceIp}/live/0`
+                          : "整蛊车未上报局域网 IP"
+                      }
+                      style={{ padding: 0 }}
+                    >
+                      播放视频
+                    </Button>
+                  </Space>
                 ) : (
                   <Tag color="default">未配置（pet_feed/pet_tease 触发会跳过）</Tag>
                 )}

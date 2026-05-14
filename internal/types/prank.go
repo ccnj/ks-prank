@@ -65,6 +65,8 @@ type Profile struct {
 	LiveAccounts []*LiveAccount `json:"live_accounts"`
 	// 该场地配置的整蛊目标车 SN(无配置时为空,pet_feed/pet_tease 等动作会跳过)
 	PrankDeviceSn string `json:"prank_device_sn"`
+	// 整蛊目标车最近一次上报的 wlan0 IP(用于在 ks-prank 里通过 ffplay 拉 RTSP 预览,场地内同网段可用)
+	PrankDeviceLastWlanIp string `json:"prank_device_last_wlan_ip"`
 }
 
 // RuntimeConfig 连接期间的完整业务上下文（不持久化）

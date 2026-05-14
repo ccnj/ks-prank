@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -454,5 +456,29 @@ func (a *App) Disconnect() error {
 	if !a.stopConnection() {
 		return fmt.Errorf("未连接")
 	}
+	return nil
+}
+
+// PlayCarStream 用本机 ffplay 拉取整蛊车的 RTSP 视频流(同局域网直连)。
+// 要求 ffplay 在 PATH 中。
+func (a *App) PlayCarStream(ip string) error {
+	if net.ParseIP(ip) == nil {
+		return fmt.Errorf("无效的 IP: %q", ip)
+	}
+	rtspURL := fmt.Sprintf("rtsp://%s/live/0", ip)
+	cmd := exec.Command(
+		"ffplay",
+		"-rtsp_transport", "tcp",
+		"-fflags", "nobuffer",
+		"-flags", "low_delay",
+		rtspURL,
+	)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 ffplay 失败(请确认已安装并加入 PATH): %w", err)
+	}
+	go func() {
+		_ = cmd.Wait()
+	}()
+	log.Printf("[PlayCarStream] 已启动 ffplay pid=%d url=%s", cmd.Process.Pid, rtspURL)
 	return nil
 }
